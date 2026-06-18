@@ -6,17 +6,17 @@ It includes advanced features like an **AI Autonomous Booking Agent** that can p
 
 ---
 
-## ✨ Key Features
+## ✨ Version 2.0: BookMyShow Experience Overhaul
 
-- **Secure Authentication:** JWT-based user authentication with bcrypt password hashing.
-- **Advanced Booking Flow:** Real-time seat layout visualization, surge pricing logic, and concurrent booking protection using DB-level transactions.
-- **AI Booking Agent:** An autonomous NLP agent that understands natural language commands (e.g., *"Book me 2 tickets for Zootopia 2 in Mumbai tonight with nachos"*) to find the best shows, select premium seats, and build a cart automatically.
-- **Admin Dashboard:** Role-based access control. Admins can view revenue analytics, add movies to the inventory, and schedule shows dynamically across different cities and cinemas.
-- **Snack Integration:** Bundle food and beverage add-ons with ticket purchases, stored in a dedicated `booking_snacks` table.
-- **Loyalty Points:** Repeat customers receive automatic discounts on subsequent bookings.
-- **Responsive UI:** Modern, dark-themed UI built with React and Vanilla CSS.
+We've completely revamped the platform to deliver a premium, production-grade BookMyShow experience:
+- **Dynamic Movie Catalog:** Integrated 15 blockbuster movies with ultra-fast, unblocked poster and banner images fetched directly from the **TMDB Global Image CDN**.
+- **Realistic Cinema Scheduling:** Shows are now auto-scheduled using real-world cinema slots (e.g., 10:30 AM, 1:30 PM, 4:30 PM) ensuring they are always in the future, correctly formatted in IST.
+- **Advanced UI/UX:** A brand new interactive `Home.jsx` featuring a dynamic hero carousel with blurred backgrounds, genre filter tabs, premium movie cards with hover "Book Now" overlays, and format badges (IMAX, 4DX, 2D).
+- **Bulletproof Architecture:** Fixed core database scheduling bugs by introducing staggered minute-offsets, solving silent `UNIQUE(screen_id, show_time)` constraint failures.
 
 ---
+
+## ⚡ Core Features
 
 ## 🛠 Tech Stack
 
