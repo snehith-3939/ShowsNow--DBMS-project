@@ -27,10 +27,21 @@ BEGIN
         WHERE show_id = NEW.show_id
         RETURNING available_seats INTO v_available_seats;
         
-        -- Check surge condition (e.g. less than 20% seats left)
-        IF CAST(v_available_seats AS FLOAT) / v_total_seats < 0.2 THEN
-            UPDATE shows SET is_surge_active = TRUE WHERE show_id = NEW.show_id;
-        END IF;
+        -- Check surge condition (Tiered Occupancy Surge)
+        DECLARE
+            v_percent_empty FLOAT;
+        BEGIN
+            v_percent_empty := CAST(v_available_seats AS FLOAT) / v_total_seats;
+            IF v_percent_empty < 0.05 THEN
+                UPDATE shows SET surge_multiplier = 1.50 WHERE show_id = NEW.show_id;
+            ELSIF v_percent_empty < 0.20 THEN
+                UPDATE shows SET surge_multiplier = 1.25 WHERE show_id = NEW.show_id;
+            ELSIF v_percent_empty < 0.50 THEN
+                UPDATE shows SET surge_multiplier = 1.10 WHERE show_id = NEW.show_id;
+            ELSE
+                UPDATE shows SET surge_multiplier = 1.00 WHERE show_id = NEW.show_id;
+            END IF;
+        END;
         
     ELSIF NEW.status = 'Cancelled' AND OLD.status = 'Confirmed' THEN
         -- Get tickets booked count for this cancelled booking
@@ -41,23 +52,24 @@ BEGIN
         WHERE show_id = NEW.show_id
         RETURNING available_seats INTO v_available_seats;
         
-        -- Turn off surge if we go above 20% available again
+        -- Recalculate surge after cancellation
         SELECT total_seats INTO v_total_seats FROM screens WHERE screen_id = (SELECT screen_id FROM shows WHERE show_id = NEW.show_id);
-        IF CAST(v_available_seats AS FLOAT) / v_total_seats >= 0.2 THEN
-            UPDATE shows SET is_surge_active = FALSE WHERE show_id = NEW.show_id;
-        END IF;
+        
+        DECLARE
+            v_percent_empty FLOAT;
+        BEGIN
+            v_percent_empty := CAST(v_available_seats AS FLOAT) / v_total_seats;
+            IF v_percent_empty < 0.05 THEN
+                UPDATE shows SET surge_multiplier = 1.50 WHERE show_id = NEW.show_id;
+            ELSIF v_percent_empty < 0.20 THEN
+                UPDATE shows SET surge_multiplier = 1.25 WHERE show_id = NEW.show_id;
+            ELSIF v_percent_empty < 0.50 THEN
+                UPDATE shows SET surge_multiplier = 1.10 WHERE show_id = NEW.show_id;
+            ELSE
+                UPDATE shows SET surge_multiplier = 1.00 WHERE show_id = NEW.show_id;
+            END IF;
+        END;
 
-        -- Waitlist logic
-        -- Let's notify the first person in the waitlist who requested <= available seats
-        UPDATE waitlist 
-        SET status = 'Notified' 
-        WHERE waitlist_id = (
-            SELECT waitlist_id FROM waitlist 
-            WHERE show_id = NEW.show_id 
-              AND status = 'Waiting' 
-              AND requested_seats <= v_available_seats
-            ORDER BY joined_at ASC LIMIT 1
-        );
     END IF;
     
     RETURN NEW;
@@ -68,3 +80,29 @@ CREATE TRIGGER trigger_booking_status_change
 AFTER UPDATE ON bookings
 FOR EACH ROW
 EXECUTE FUNCTION update_show_availability_and_surge();
+
+-- 2. Loyalty Points Ledger Trigger
+-- When a booking is Confirmed, grant 50 points PER TICKET to the user, expiring in 60 days.
+CREATE OR REPLACE FUNCTION grant_loyalty_points()
+RETURNS TRIGGER AS $$
+DECLARE
+    ticket_count INTEGER;
+BEGIN
+    IF NEW.status = 'Confirmed' AND OLD.status != 'Confirmed' THEN
+        -- Count how many tickets are in this booking
+        SELECT COUNT(*) INTO ticket_count FROM tickets WHERE booking_id = NEW.booking_id;
+        
+        -- Insert 50 points * ticket_count into the ledger
+        IF ticket_count > 0 THEN
+            INSERT INTO loyalty_ledger (user_id, booking_id, points_earned, expires_at)
+            VALUES (NEW.user_id, NEW.booking_id, ticket_count * 50, CURRENT_TIMESTAMP + INTERVAL '60 days');
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_grant_loyalty_points
+AFTER UPDATE ON bookings
+FOR EACH ROW
+EXECUTE FUNCTION grant_loyalty_points();

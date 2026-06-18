@@ -3,6 +3,7 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { query, pool } = require('./db');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
 
 const app = express();
@@ -58,7 +59,7 @@ app.post('/api/auth/register', async (req, res) => {
 
     const password_hash = await bcrypt.hash(password, 10);
     const result = await query(
-      'INSERT INTO users (name, email, password_hash, phone, role) VALUES ($1, $2, $3, $4, $5) RETURNING user_id, name, email, phone, role, loyalty_points, created_at',
+      'INSERT INTO users (name, email, password_hash, phone, role) VALUES ($1, $2, $3, $4, $5) RETURNING user_id, name, email, phone, role, created_at',
       [name, email, password_hash, phone || null, 'user']
     );
     const user = result.rows[0];
@@ -84,7 +85,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
   try {
     const result = await query(
-      'SELECT user_id, name, email, phone, loyalty_points, role, password_hash FROM users WHERE email = $1',
+      'SELECT user_id, name, email, phone, role, password_hash FROM users WHERE email = $1',
       [email]
     );
     if (result.rows.length === 0) {
@@ -119,7 +120,7 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
     const result = await query(
-      'SELECT user_id, name, email, phone, city, loyalty_points, role, created_at FROM users WHERE user_id = $1',
+      'SELECT user_id, name, email, phone, city, role, created_at FROM users WHERE user_id = $1',
       [req.user.user_id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found.' });
@@ -130,6 +131,46 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
   }
 });
 
+// GET /api/user/bookings — user's own bookings with movie/cinema info
+app.get('/api/user/bookings', authenticateToken, async (req, res) => {
+  try {
+    const sql = `
+      SELECT b.booking_id, b.total_amount, b.status, b.booking_time,
+             m.title, m.poster_url,
+             c.name as cinema_name, c.city,
+             sc.name as screen_name,
+             s.show_time
+      FROM bookings b
+      JOIN shows s ON b.show_id = s.show_id
+      JOIN movies m ON s.movie_id = m.movie_id
+      JOIN screens sc ON s.screen_id = sc.screen_id
+      JOIN cinemas c ON sc.cinema_id = c.cinema_id
+      WHERE b.user_id = $1
+      ORDER BY b.booking_time DESC
+    `;
+    const { rows } = await query(sql, [req.user.user_id]);
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch bookings' });
+  }
+});
+
+// GET /api/user/loyalty — user's loyalty point balance
+app.get('/api/user/loyalty', authenticateToken, async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT COALESCE(SUM(points_earned - points_spent), 0) as balance
+      FROM loyalty_ledger
+      WHERE user_id = $1 AND expires_at > NOW()
+    `, [req.user.user_id]);
+    res.json({ balance: parseInt(result.rows[0].balance) || 0 });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch loyalty balance' });
+  }
+});
+
 // ---------------------------------------------------------
 // Admin Routes
 // ---------------------------------------------------------
@@ -137,16 +178,18 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
 // Get Admin Stats
 app.get('/api/admin/stats', authenticateAdmin, async (req, res) => {
   try {
-    const revenueRes = await query('SELECT SUM(total_amount) as total_revenue FROM bookings WHERE status = $1', ['Confirmed']);
-    const bookingsRes = await query('SELECT COUNT(*) as total_bookings FROM bookings WHERE status = $1', ['Confirmed']);
-    const moviesRes = await query('SELECT COUNT(*) as total_movies FROM movies');
-    const usersRes = await query('SELECT COUNT(*) as total_users FROM users');
+    const revenueRes = await pool.query('SELECT SUM(total_amount) as total_revenue FROM bookings WHERE status = $1', ['Confirmed']);
+    const bookingsRes = await pool.query('SELECT COUNT(*) as total_bookings FROM bookings WHERE status = $1', ['Confirmed']);
+    const moviesRes = await pool.query('SELECT COUNT(*) as total_movies FROM movies');
+    const usersRes = await pool.query('SELECT COUNT(*) as total_users FROM users');
+    const cityRevRes = await pool.query('SELECT * FROM v_revenue_by_city ORDER BY revenue DESC');
 
     res.json({
       totalRevenue: revenueRes.rows[0].total_revenue || 0,
       totalBookings: bookingsRes.rows[0].total_bookings,
       totalMovies: moviesRes.rows[0].total_movies,
-      totalUsers: usersRes.rows[0].total_users
+      totalUsers: usersRes.rows[0].total_users,
+      cityRevenue: cityRevRes.rows
     });
   } catch (err) {
     console.error(err);
@@ -178,10 +221,14 @@ app.post('/api/admin/shows', authenticateAdmin, async (req, res) => {
     const check = await query('SELECT * FROM shows WHERE screen_id = $1 AND show_time = $2', [screen_id, show_time]);
     if (check.rows.length > 0) return res.status(409).json({ error: 'Screen is already occupied at this time' });
 
+    const screenRes = await query('SELECT total_seats FROM screens WHERE screen_id = $1', [screen_id]);
+    if (screenRes.rows.length === 0) return res.status(404).json({ error: 'Screen not found' });
+    const available_seats = screenRes.rows[0].total_seats;
+
     const result = await query(
       `INSERT INTO shows (movie_id, screen_id, show_time, base_price, available_seats) 
-       VALUES ($1, $2, $3, $4, 50) RETURNING *`,
-      [movie_id, screen_id, show_time, base_price]
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [movie_id, screen_id, show_time, base_price, available_seats]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -300,14 +347,14 @@ app.get('/api/stream', async (req, res) => {
   }
 });
 
-// Get shows for a movie (supports ?date= filter)
+// Get shows for a movie (supports ?date= and ?city= filter)
 app.get('/api/shows/movie/:movie_id', async (req, res) => {
   try {
     const { movie_id } = req.params;
-    const { date } = req.query; // expects YYYY-MM-DD
+    const { date, city } = req.query; // expects YYYY-MM-DD
 
     let sql = `
-      SELECT s.show_id, s.show_time, s.base_price, s.available_seats, s.is_surge_active,
+      SELECT s.show_id, s.show_time, s.base_price, s.available_seats, s.surge_multiplier,
              sc.name as screen_name, c.name as cinema_name, c.city, c.address, c.cinema_id
       FROM shows s
       JOIN screens sc ON s.screen_id = sc.screen_id
@@ -315,12 +362,20 @@ app.get('/api/shows/movie/:movie_id', async (req, res) => {
       WHERE s.movie_id = $1
     `;
     const params = [movie_id];
+    let paramIdx = 2;
 
     if (date) {
-      sql += ` AND DATE(s.show_time) = $2`;
+      sql += ` AND DATE(s.show_time) = $${paramIdx} AND s.show_time > NOW()`;
       params.push(date);
+      paramIdx++;
     } else {
-      sql += ` AND DATE(s.show_time) >= CURRENT_DATE`;
+      sql += ` AND s.show_time > NOW()`;
+    }
+
+    if (city && city !== 'All') {
+      sql += ` AND c.city ILIKE $${paramIdx}`;
+      params.push(city);
+      paramIdx++;
     }
 
     sql += ` ORDER BY c.name, s.show_time`;
@@ -337,7 +392,7 @@ app.get('/api/shows/movie/:movie_id', async (req, res) => {
 app.get('/api/shows/:show_id', async (req, res) => {
   try {
     const sql = `
-      SELECT s.show_id, s.show_time, s.base_price, s.is_surge_active, s.available_seats,
+      SELECT s.show_id, s.show_time, s.base_price, s.surge_multiplier, s.available_seats,
              m.title, m.poster_url, m.duration_mins, m.language,
              sc.name as screen_name, c.name as cinema_name, c.city, c.address
       FROM shows s
@@ -402,7 +457,7 @@ app.post('/api/autonomous-booking', async (req, res) => {
     const sql = `
       SELECT 
         s.show_id, m.title, m.genre, m.poster_url, m.banner_url, c.name AS cinema_name, c.city,
-        sc.name AS screen_name, s.show_time, s.base_price, s.available_seats, s.is_surge_active
+        sc.name AS screen_name, s.show_time, s.base_price, s.available_seats, s.surge_multiplier
       FROM shows s
       JOIN movies m ON s.movie_id = m.movie_id
       JOIN screens sc ON s.screen_id = sc.screen_id
@@ -413,7 +468,7 @@ app.post('/api/autonomous-booking', async (req, res) => {
         AND s.show_time <= $3::timestamp
         AND ($4::varchar IS NULL OR m.genre ILIKE $4)
         AND s.available_seats > 0
-      ORDER BY s.is_surge_active ASC, s.show_time ASC
+      ORDER BY s.surge_multiplier ASC, s.show_time ASC
       LIMIT 3;
     `;
 
@@ -433,107 +488,255 @@ app.post('/api/autonomous-booking', async (req, res) => {
 // ---------------------------------------------------------
 // Booking & Transaction Management
 // ---------------------------------------------------------
+// Book tickets
 app.post('/api/bookings', authenticateToken, async (req, res) => {
-  const { show_id, seat_ids, snack_ids } = req.body;
-  const user_id = req.user.user_id; // Always use the authenticated user's id from JWT
+  const { show_id, seat_ids, snack_ids, applyPoints } = req.body;
+  const user_id = req.user.user_id;
 
-  // We use a transaction to ensure concurrency safety
+  if (!show_id || !seat_ids || seat_ids.length === 0) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
   const client = await pool.connect();
-
   try {
     await client.query('BEGIN');
 
-    // 1. Lock the show row to prevent concurrent bookings from messing up available_seats
+    // 1. Get show details and lock the row
     const showRes = await client.query(
-      'SELECT base_price, is_surge_active, available_seats FROM shows WHERE show_id = $1 FOR UPDATE',
+      'SELECT screen_id, base_price, surge_multiplier, available_seats FROM shows WHERE show_id = $1',
       [show_id]
     );
-
     if (showRes.rows.length === 0) throw new Error('Show not found');
     const show = showRes.rows[0];
 
     if (show.available_seats < seat_ids.length) {
-      throw new Error('Not enough available seats. Please join the waitlist.');
+      throw new Error('Not enough seats available');
     }
 
-    // 2. Check Loyalty Discount
-    let discountMultiplier = 1.0;
-    const loyaltyRes = await client.query(
-      "SELECT COUNT(*) FROM bookings WHERE user_id = $1 AND booking_time > NOW() - INTERVAL '30 days'",
-      [user_id]
-    );
-    if (parseInt(loyaltyRes.rows[0].count) > 5) {
-      discountMultiplier = 0.9; // 10% discount
-    }
-
-    // 3. Calculate Ticket Price (Surge Pricing logic)
-    let surgeMultiplier = show.is_surge_active ? 1.2 : 1.0;
-    let totalAmount = 0;
+    let surgeMultiplier = parseFloat(show.surge_multiplier) || 1.0;
+    let ticketsTotal = 0;
     let finalTickets = [];
 
-    // Lock the specific seats being booked to prevent double-booking
-    // Ensure they aren't already booked for this show
-    for (let seat_id of seat_ids) {
-      // First verify seat exists and get its multiplier
-      const seatRes = await client.query('SELECT price_multiplier FROM seats WHERE seat_id = $1', [seat_id]);
+    const sortedSeatIds = [...seat_ids].sort();
+    for (let seat_id of sortedSeatIds) {
+      const seatRes = await client.query('SELECT price_multiplier, screen_id FROM seats WHERE seat_id = $1 FOR UPDATE', [seat_id]);
       if (seatRes.rows.length === 0) throw new Error('Invalid seat');
-      const seatTypeMultiplier = parseFloat(seatRes.rows[0].price_multiplier);
-
-      // Check if already booked
+      
       const isBooked = await client.query(`
          SELECT t.ticket_id FROM tickets t
          JOIN bookings b ON t.booking_id = b.booking_id
          WHERE b.show_id = $1 AND b.status = 'Confirmed' AND t.seat_id = $2
        `, [show_id, seat_id]);
-
       if (isBooked.rows.length > 0) throw new Error('Seat already booked');
 
-      const seatPrice = parseFloat(show.base_price) * seatTypeMultiplier * surgeMultiplier * discountMultiplier;
-      totalAmount += seatPrice;
+      const seatPrice = parseFloat(show.base_price) * parseFloat(seatRes.rows[0].price_multiplier) * surgeMultiplier;
+      ticketsTotal += seatPrice;
       finalTickets.push({ seat_id, price: seatPrice });
     }
 
-    // 4. Calculate Snacks Price
+    // 4. Calculate Snacks
+    let snacksTotal = 0;
     if (snack_ids && snack_ids.length > 0) {
-      for (let snack of snack_ids) {
-        const snackRes = await client.query('SELECT price FROM snacks WHERE snack_id = $1', [snack.id]);
-        if (snackRes.rows.length > 0) {
-          totalAmount += (parseFloat(snackRes.rows[0].price) * snack.quantity);
+      const snackRes = await client.query('SELECT snack_id, price FROM snacks WHERE snack_id = ANY($1)', [snack_ids]);
+      snacksTotal = snackRes.rows.reduce((sum, s) => sum + parseFloat(s.price), 0);
+    }
+
+    let totalAmount = ticketsTotal + snacksTotal;
+
+    // 5. Apply Loyalty Points
+    let pointsToSpend = 0;
+    if (applyPoints) {
+      const loyaltyRes = await client.query(`
+        SELECT SUM(points_earned - points_spent) as balance
+        FROM loyalty_ledger
+        WHERE user_id = $1 AND expires_at > NOW()
+      `, [user_id]);
+      
+      const balance = parseInt(loyaltyRes.rows[0].balance) || 0;
+      if (balance > 0) {
+        const POINTS_MULTIPLIER = 0.10; // 50 points = 5 rupees
+        const MAX_DISCOUNT_RUPEES = 100; 
+        
+        let maxPossibleDiscount = balance * POINTS_MULTIPLIER;
+        let actualDiscount = Math.min(maxPossibleDiscount, MAX_DISCOUNT_RUPEES, totalAmount);
+        
+        if (actualDiscount > 0) {
+          pointsToSpend = Math.ceil(actualDiscount / POINTS_MULTIPLIER);
+          totalAmount -= actualDiscount;
         }
       }
     }
 
-    // 5. Create Booking Record
+    // 6. Create Booking (Pending)
     const bookingRes = await client.query(
       'INSERT INTO bookings (user_id, show_id, total_amount, status) VALUES ($1, $2, $3, $4) RETURNING booking_id',
-      [user_id, show_id, totalAmount, 'Confirmed']
+      [user_id, show_id, totalAmount, 'Pending']
     );
-    const booking_id = bookingRes.rows[0].booking_id;
+    const bookingId = bookingRes.rows[0].booking_id;
 
-    // 6. Insert Tickets
-    for (let t of finalTickets) {
+    // Insert Spent Points into Ledger
+    if (pointsToSpend > 0) {
       await client.query(
-        'INSERT INTO tickets (booking_id, seat_id, final_price) VALUES ($1, $2, $3)',
-        [booking_id, t.seat_id, t.price]
+        'INSERT INTO loyalty_ledger (user_id, booking_id, points_spent, expires_at) VALUES ($1, $2, $3, NOW())',
+        [user_id, bookingId, pointsToSpend]
       );
     }
 
-    // 7. Insert Booking Snacks
+    for (const seat of finalTickets) {
+      await client.query(
+        'INSERT INTO tickets (booking_id, seat_id, final_price) VALUES ($1, $2, $3)',
+        [bookingId, seat.seat_id, seat.price]
+      );
+    }
+
+    // 7. Insert Booking Snacks BEFORE confirming
     if (snack_ids && snack_ids.length > 0) {
       for (let snack of snack_ids) {
         await client.query(
           'INSERT INTO booking_snacks (booking_id, snack_id, quantity) VALUES ($1, $2, $3)',
-          [booking_id, snack.id, snack.quantity]
+          [bookingId, snack.id, snack.quantity]
         );
       }
     }
 
+    // 8. Confirm booking — this fires the DB trigger for seat count & surge pricing & loyalty points
+    await client.query('UPDATE bookings SET status = $1 WHERE booking_id = $2', ['Confirmed', bookingId]);
+
     await client.query('COMMIT');
-    res.json({ success: true, booking_id, totalAmount, message: 'Booking confirmed!' });
+    res.json({ success: true, booking_id: bookingId, totalAmount, message: 'Booking confirmed!' });
 
   } catch (err) {
     await client.query('ROLLBACK');
     console.error(err);
+    res.status(500).json({ error: 'Booking failed. Please try again.' });
+  } finally {
+    client.release();
+  }
+});
+
+// ---------------------------------------------------------
+// Waitlist Management
+// ---------------------------------------------------------
+app.post('/api/waitlist', authenticateToken, async (req, res) => {
+  const { show_id, requested_seats } = req.body;
+  const user_id = req.user.user_id;
+
+  if (!show_id || !requested_seats) {
+    return res.status(400).json({ error: 'show_id and requested_seats are required' });
+  }
+
+  try {
+    const result = await query(
+      'INSERT INTO waitlist (show_id, user_id, requested_seats) VALUES ($1, $2, $3) RETURNING waitlist_id',
+      [show_id, user_id, requested_seats]
+    );
+    res.json({ success: true, message: 'Successfully joined the waitlist!' });
+  } catch (err) {
+    console.error('Waitlist Error:', err);
+    res.status(500).json({ error: 'Failed to join waitlist' });
+  }
+});
+
+// ---------------------------------------------------------
+// Cancellation & Auto-Booking Waitlist Engine
+// ---------------------------------------------------------
+app.post('/api/bookings/:id/cancel', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const user_id = req.user.user_id;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Verify booking
+    const bookingRes = await client.query('SELECT * FROM bookings WHERE booking_id = $1 AND user_id = $2 FOR UPDATE', [id, user_id]);
+    if (bookingRes.rows.length === 0) throw new Error('Booking not found');
+    const booking = bookingRes.rows[0];
+
+    if (booking.status === 'Cancelled') throw new Error('Already cancelled');
+
+    // 2. Mark as cancelled
+    await client.query('UPDATE bookings SET status = $1 WHERE booking_id = $2', ['Cancelled', id]);
+
+    // Note: The postgres trigger 'update_show_availability_and_surge' fires here 
+    // and adds seats back to available_seats!
+
+    // 3. Auto-Booking Waitlist Engine
+    // Fetch all Waiting users for this show
+    const waitlistRes = await client.query(`
+      SELECT * FROM waitlist 
+      WHERE show_id = $1 AND status = 'Waiting'
+      ORDER BY joined_at ASC
+    `, [booking.show_id]);
+
+    for (let wlUser of waitlistRes.rows) {
+      // Refresh available seats inside transaction
+      const showRes = await client.query('SELECT available_seats, base_price, surge_multiplier, screen_id FROM shows WHERE show_id = $1 FOR UPDATE', [booking.show_id]);
+      const show = showRes.rows[0];
+
+      if (show.available_seats >= wlUser.requested_seats) {
+         // Check for adjacent seats!
+         const seatsRes = await client.query(`
+            SELECT seat_id, row_no, seat_no, price_multiplier
+            FROM seats 
+            WHERE screen_id = $1
+            AND seat_id NOT IN (
+               SELECT t.seat_id FROM tickets t JOIN bookings b ON t.booking_id = b.booking_id WHERE b.show_id = $2 AND b.status = 'Confirmed'
+            )
+            ORDER BY row_no ASC, seat_no ASC
+         `, [show.screen_id, booking.show_id]);
+
+         // Sliding window to find contiguous seats
+         const seats = seatsRes.rows;
+         let adjacentSeats = null;
+         
+         for (let i = 0; i <= seats.length - wlUser.requested_seats; i++) {
+           let isContiguous = true;
+           let currentWindow = [seats[i]];
+           for (let j = 1; j < wlUser.requested_seats; j++) {
+             if (seats[i+j].row_no !== seats[i].row_no || parseInt(seats[i+j].seat_no) !== parseInt(seats[i+j-1].seat_no) + 1) {
+               isContiguous = false;
+               break;
+             }
+             currentWindow.push(seats[i+j]);
+           }
+           if (isContiguous) {
+             adjacentSeats = currentWindow;
+             break;
+           }
+         }
+
+         if (adjacentSeats) {
+            // Auto-book!
+            const newBookingRes = await client.query(
+               'INSERT INTO bookings (user_id, show_id, status) VALUES ($1, $2, $3) RETURNING booking_id',
+               [wlUser.user_id, booking.show_id, 'Pending']
+            );
+            const newBookingId = newBookingRes.rows[0].booking_id;
+
+            const basePrice = parseFloat(show.base_price);
+            const surgeMultiplier = parseFloat(show.surge_multiplier) || 1.0;
+            
+            for (let seat of adjacentSeats) {
+               const finalPrice = basePrice * parseFloat(seat.price_multiplier) * surgeMultiplier;
+               await client.query(
+                  'INSERT INTO tickets (booking_id, seat_id, final_price) VALUES ($1, $2, $3)',
+                  [newBookingId, seat.seat_id, finalPrice]
+               );
+            }
+
+            // Confirm booking
+            await client.query('UPDATE bookings SET status = $1 WHERE booking_id = $2', ['Confirmed', newBookingId]);
+            // Mark waitlist as Auto-Booked
+            await client.query('UPDATE waitlist SET status = $1 WHERE waitlist_id = $2', ['Auto-Booked', wlUser.waitlist_id]);
+         }
+      }
+    }
+
+    await client.query('COMMIT');
+    res.json({ message: 'Booking cancelled successfully. Waitlist processed.' });
+  } catch (err) {
+    await client.query('ROLLBACK');
     res.status(400).json({ error: err.message });
   } finally {
     client.release();
@@ -543,136 +746,49 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
 // Autonomous NLP Agent Booking API — powered by Hugging Face LLM
 app.post('/api/autonomous-agent', authenticateToken, async (req, res) => {
   try {
-    const { prompt } = req.body;
-    if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
+    const { prompt, context } = req.body;
+    let intent = context ? { ...context } : {};
 
-    // -------------------------------------------------------
-    // STEP 1: Use HF LLM to extract structured intent from prompt
-    // -------------------------------------------------------
-    let intent = null;
+    if (prompt && !context?.clarification_field) {
+      const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+      const systemInstruction = `You are a movie booking assistant. Extract booking intent from the user message.
+Return ONLY valid JSON with these EXACT fields:
+- "movie_title": string or null
+- "city": string or null
+- "quantity": number (default 2)
+- "snack": string or null
+- "genre": string or null
+- "time_of_day": string or null`;
 
-    const HF_API_KEY = process.env.HF_API_KEY;
-    const systemPrompt = `You are a movie booking assistant. Extract booking intent from the user message and return ONLY valid JSON with these fields:
-- "movie_title": string or null (the movie name they want to watch)
-- "city": string or null (city name, e.g. "Mumbai", "Delhi", "Bangalore")
-- "quantity": number (how many tickets, default 2)
-- "snack": string or null (snack name like "popcorn", "nachos", "coke")
-- "genre": string or null (movie genre like "action", "comedy")
-- "time_of_day": string or null ("morning", "afternoon", "evening", "night") or a specific time like "6 PM"
-
-Return ONLY the JSON object. No explanation. No markdown.`;
-
-    if (HF_API_KEY && HF_API_KEY !== 'your_huggingface_api_key_here') {
-      try {
-        const hfResponse = await fetch(
-          'https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3',
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${HF_API_KEY}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              inputs: `<s>[INST] ${systemPrompt}\n\nUser message: "${prompt}" [/INST]`,
-              parameters: {
-                max_new_tokens: 200,
-                temperature: 0.1,
-                return_full_text: false
-              }
-            })
-          }
-        );
-
-        if (hfResponse.ok) {
-          const hfData = await hfResponse.json();
-          const rawText = Array.isArray(hfData) 
-            ? hfData[0]?.generated_text 
-            : hfData?.generated_text;
-
-          if (rawText) {
-            // Extract JSON from the response (it might have extra text)
-            const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-              intent = JSON.parse(jsonMatch[0]);
-              console.log('HF LLM extracted intent:', intent);
-            }
-          }
-        } else {
-          const errText = await hfResponse.text();
-          console.warn('HF API error:', hfResponse.status, errText);
-        }
-      } catch (hfErr) {
-        console.warn('HF API call failed, falling back to regex:', hfErr.message);
+      if (GEMINI_API_KEY && GEMINI_API_KEY !== 'your_gemini_api_key_here') {
+        try {
+          const { GoogleGenerativeAI } = require('@google/generative-ai');
+          const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+          const model = genAI.getGenerativeModel({
+            model: 'gemini-1.5-flash',
+            systemInstruction,
+            generationConfig: { responseMimeType: "application/json", temperature: 0.1 }
+          });
+          const result = await model.generateContent(prompt);
+          intent = { ...intent, ...JSON.parse(result.response.text()) };
+        } catch (e) { console.warn(e.message); }
       }
+      
+      intent.quantity = Math.min(Math.max(parseInt(intent.quantity) || 2, 1), 10);
+    } else if (prompt && context?.clarification_field) {
+      intent[context.clarification_field] = prompt;
+      delete intent.clarification_field;
     }
 
-    // -------------------------------------------------------
-    // STEP 2: Fallback to regex parsing if LLM failed/unavailable
-    // -------------------------------------------------------
-    if (!intent) {
-      console.log('Using regex fallback for intent extraction');
-      const p = prompt.toLowerCase();
-
-      // Quantity
-      let quantity = 2;
-      const numMatch = p.match(/\b(\d+)\b/);
-      if (numMatch) quantity = parseInt(numMatch[1]);
-      if (p.includes('one')) quantity = 1;
-      if (p.includes('two')) quantity = 2;
-      if (p.includes('three')) quantity = 3;
-      if (p.includes('four')) quantity = 4;
-      if (p.includes('five')) quantity = 5;
-
-      // City
-      let city = null;
-      const cities = ['mumbai', 'delhi', 'bangalore', 'bengaluru', 'chennai', 'hyderabad', 'pune', 'kolkata'];
-      for (const c of cities) {
-        if (p.includes(c)) { city = c; break; }
-      }
-
-      // Genre
-      let genre = null;
-      const genres = ['action', 'comedy', 'drama', 'sci-fi', 'thriller', 'horror', 'romance', 'adventure', 'fantasy'];
-      for (const g of genres) {
-        if (p.includes(g)) { genre = g; break; }
-      }
-
-      // Movie title (between "for"/"watch" and stop words)
-      let movie_title = null;
-      const titleMatch = p.match(/(?:for|watch|book)\s+(?:me\s+)?(?:\d+\s+tickets?\s+(?:for|to)\s+)?(.+?)(?=\s+in\s+|\s+at\s+|\s+with\s+|\s+tonight|\s+today|\s+whenever|\s+tomorrow|$)/i);
-      if (titleMatch) {
-        movie_title = titleMatch[1].replace(/\d+\s+tickets?\s+(for\s+)?/i, '').trim();
-        // Clean up leftover words
-        movie_title = movie_title.replace(/^(me\s+)?(a\s+)?/i, '').trim();
-      }
-
-      // Snack
-      let snack = null;
-      const snacks = ['popcorn', 'coke', 'nachos', 'samosa', 'pepsi'];
-      for (const s of snacks) {
-        if (p.includes(s)) { snack = s; break; }
-      }
-
-      // Time
-      let time_of_day = null;
-      const timeMatch = p.match(/(\d+)(?::\d+)?\s*(am|pm)/i);
-      if (timeMatch) time_of_day = timeMatch[0];
-      else if (p.includes('morning')) time_of_day = 'morning';
-      else if (p.includes('afternoon')) time_of_day = 'afternoon';
-      else if (p.includes('evening') || p.includes('tonight')) time_of_day = 'evening';
-      else if (p.includes('night')) time_of_day = 'night';
-
-      intent = { movie_title, city, quantity, snack, genre, time_of_day };
+    if (!intent.city) {
+      return res.json({
+        type: 'clarify',
+        message: 'Which city are you looking to watch this in?',
+        options: ['Mumbai', 'Delhi', 'Bengaluru', 'Hyderabad', 'Chennai', 'Pune'],
+        context: { ...intent, clarification_field: 'city' }
+      });
     }
 
-    // Ensure quantity is a valid number
-    intent.quantity = Math.min(Math.max(parseInt(intent.quantity) || 2, 1), 10);
-
-    console.log('Final intent:', intent);
-
-    // -------------------------------------------------------
-    // STEP 3: Resolve time_of_day to a time string for SQL
-    // -------------------------------------------------------
     let timeStr = null;
     if (intent.time_of_day) {
       const t = intent.time_of_day.toLowerCase();
@@ -684,17 +800,15 @@ Return ONLY the JSON object. No explanation. No markdown.`;
         timeStr = `${hour.toString().padStart(2, '0')}:00`;
       } else if (t === 'morning') timeStr = '10:00';
       else if (t === 'afternoon') timeStr = '14:00';
-      else if (t === 'evening') timeStr = '18:00';
+      else if (t === 'evening' || t === 'tonight') timeStr = '18:00';
       else if (t === 'night') timeStr = '20:00';
     }
 
-    // -------------------------------------------------------
-    // STEP 4: Query database for best matching show
-    // -------------------------------------------------------
+    const { query } = require('./db');
     const params = [];
     let sql = `
       SELECT 
-        s.show_id, s.show_time, s.base_price, s.is_surge_active,
+        s.show_id, s.show_time, s.base_price, s.surge_multiplier, s.available_seats,
         m.title, m.poster_url, m.genre,
         c.name as cinema_name, c.city,
         sc.name as screen_name, sc.screen_id
@@ -703,17 +817,14 @@ Return ONLY the JSON object. No explanation. No markdown.`;
       JOIN screens sc ON s.screen_id = sc.screen_id
       JOIN cinemas c ON sc.cinema_id = c.cinema_id
       WHERE s.show_time >= (NOW() - INTERVAL '30 minutes')
-        AND s.available_seats >= $1
     `;
-    params.push(intent.quantity);
-    let paramIdx = 2;
 
+    let paramIdx = 1;
     if (intent.city) {
       sql += ` AND c.city ILIKE $${paramIdx}`;
       params.push(`%${intent.city}%`);
       paramIdx++;
     }
-
     if (intent.movie_title) {
       sql += ` AND m.title ILIKE $${paramIdx}`;
       params.push(`%${intent.movie_title}%`);
@@ -722,121 +833,88 @@ Return ONLY the JSON object. No explanation. No markdown.`;
 
     sql += ` ORDER BY `;
     const orderClauses = [];
-
     if (intent.genre) {
       orderClauses.push(`(CASE WHEN m.genre ILIKE $${paramIdx} THEN 0 ELSE 1 END) ASC`);
       params.push(`%${intent.genre}%`);
       paramIdx++;
     }
-
     if (timeStr) {
       orderClauses.push(`ABS(EXTRACT(EPOCH FROM s.show_time::time) - EXTRACT(EPOCH FROM $${paramIdx}::time)) ASC`);
       params.push(timeStr);
       paramIdx++;
     }
-
     orderClauses.push(`m.vote_average DESC`, `s.show_time ASC`);
-    sql += orderClauses.join(', ') + ` LIMIT 1`;
+    sql += orderClauses.join(', ') + ` LIMIT 5`;
 
     const showRes = await query(sql, params);
 
     if (showRes.rows.length === 0) {
-      // Give a helpful, specific error message
-      const hint = intent.movie_title 
-        ? `"${intent.movie_title}" in ${intent.city || 'your city'}` 
-        : `${intent.genre || 'any movie'} in ${intent.city || 'your city'}`;
-      return res.status(404).json({ 
-        error: `No upcoming shows found for ${hint}. Try a different city, movie, or time.` 
+      const hint = intent.movie_title || intent.genre || 'any movie';
+      return res.json({ type: 'error', message: `No shows found for ${hint} in ${intent.city}. Try a different query.` });
+    }
+
+    const uniqueMovies = [...new Set(showRes.rows.map(r => r.title))];
+    if (!intent.movie_title && uniqueMovies.length > 1) {
+      return res.json({
+        type: 'clarify',
+        message: 'I found a few movies playing. Which one would you like?',
+        options: uniqueMovies.slice(0, 4),
+        context: { ...intent, clarification_field: 'movie_title' }
       });
     }
 
     const bestShow = showRes.rows[0];
 
-    // -------------------------------------------------------
-    // STEP 5: Auto-select best available seats
-    // -------------------------------------------------------
+    if (bestShow.available_seats < intent.quantity) {
+      return res.json({
+        type: 'waitlist',
+        message: `"${bestShow.title}" at ${bestShow.cinema_name} only has ${bestShow.available_seats} seats left, but you asked for ${intent.quantity}. Would you like to join the waitlist?`,
+        waitlistData: { show_id: bestShow.show_id, requested_seats: intent.quantity }
+      });
+    }
+
     const seatRes = await query(`
       SELECT seat_id, row_no, seat_no, seat_type, price_multiplier 
       FROM seats 
       WHERE screen_id = $1 
         AND seat_id NOT IN (
-          SELECT t.seat_id 
-          FROM tickets t
-          JOIN bookings b ON t.booking_id = b.booking_id
+          SELECT t.seat_id FROM tickets t JOIN bookings b ON t.booking_id = b.booking_id
           WHERE b.show_id = $2 AND b.status = 'Confirmed'
         )
       ORDER BY 
-        CASE WHEN seat_type = 'VIP' THEN 1 
-             WHEN seat_type = 'Premium' THEN 2 
-             ELSE 3 END ASC,
+        CASE WHEN seat_type = 'VIP' THEN 1 WHEN seat_type = 'Premium' THEN 2 ELSE 3 END ASC,
         row_no ASC, seat_no ASC
       LIMIT $3
     `, [bestShow.screen_id, bestShow.show_id, intent.quantity]);
 
     if (seatRes.rows.length < intent.quantity) {
-      return res.status(400).json({ 
-        error: `Found "${bestShow.title}" at ${bestShow.cinema_name}, but only ${seatRes.rows.length} seat(s) available. You requested ${intent.quantity}.` 
-      });
+       return res.json({ type: 'error', message: 'Not enough seats available.' });
     }
 
-    const preSelectedSeatIds = seatRes.rows.map(s => s.seat_id);
     const selectedSeats = seatRes.rows;
-
     const basePrice = parseFloat(bestShow.base_price);
-    const surgeMultiplier = bestShow.is_surge_active ? 1.2 : 1.0;
-    const totalTicketPrice = selectedSeats.reduce(
-      (sum, s) => sum + (basePrice * parseFloat(s.price_multiplier) * surgeMultiplier), 
-      0
-    );
+    const surgeMultiplier = parseFloat(bestShow.surge_multiplier) || 1.0;
+    const totalTicketPrice = selectedSeats.reduce((sum, s) => sum + (basePrice * parseFloat(s.price_multiplier) * surgeMultiplier), 0);
 
-    // -------------------------------------------------------
-    // STEP 6: Find requested snack in DB
-    // -------------------------------------------------------
     let preCartSnacks = {};
     if (intent.snack) {
-      const snRes = await query(
-        `SELECT snack_id as id FROM snacks WHERE name ILIKE $1 LIMIT 1`, 
-        [`%${intent.snack}%`]
-      );
-      if (snRes.rows.length > 0) {
-        preCartSnacks[snRes.rows[0].id] = 1;
-      }
+      const snRes = await query(`SELECT snack_id as id FROM snacks WHERE name ILIKE $1 LIMIT 1`, [`%${intent.snack}%`]);
+      if (snRes.rows.length > 0) preCartSnacks[snRes.rows[0].id] = 1;
     }
 
-    // -------------------------------------------------------
-    // STEP 7: Build response payload
-    // -------------------------------------------------------
-    const payload = {
-      show_id: bestShow.show_id,
-      preSelectedSeatIds,
-      selectedSeats,
-      showInfo: bestShow,
-      totalTicketPrice,
-      preCartSnacks,
-      // Pass intent back so UI can show a summary message
-      agentSummary: {
-        movie: bestShow.title,
-        cinema: bestShow.cinema_name,
-        city: bestShow.city,
-        showTime: bestShow.show_time,
-        seats: intent.quantity,
-        seatTypes: [...new Set(selectedSeats.map(s => s.seat_type))].join(', '),
-        snack: intent.snack || null,
-        poweredBy: HF_API_KEY && HF_API_KEY !== 'your_huggingface_api_key_here' ? 'Mistral-7B (HuggingFace)' : 'Regex Fallback'
+    res.json({
+      type: 'checkout',
+      payload: {
+        show_id: bestShow.show_id,
+        preSelectedSeatIds: selectedSeats.map(s => s.seat_id),
+        selectedSeats, showInfo: bestShow, totalTicketPrice, preCartSnacks
       }
-    };
-
-    res.json({ message: 'Success', payload });
-
-  } catch (err) {
-    console.error('AI Agent Error:', err);
-    res.status(500).json({ 
-      error: 'I encountered an error while processing your request.',
-      details: err.message
     });
+  } catch (err) {
+    console.error('Autonomous Agent Error:', err);
+    res.status(500).json({ error: 'Agent failed to process request' });
   }
 });
-
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

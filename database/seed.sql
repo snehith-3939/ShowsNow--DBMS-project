@@ -1,10 +1,10 @@
 -- Seed Data for BookMyShow Clone
 
 -- Insert Users
-INSERT INTO users (user_id, name, email, phone, city, loyalty_points) VALUES
-('11111111-1111-1111-1111-111111111111', 'John Doe', 'john@example.com', '1234567890', 'Mumbai', 50),
-('22222222-2222-2222-2222-222222222222', 'Jane Smith', 'jane@example.com', '0987654321', 'Mumbai', 120),
-('33333333-3333-3333-3333-333333333333', 'Alice Johnson', 'alice@example.com', '1122334455', 'Delhi', 10);
+INSERT INTO users (user_id, name, email, phone, city) VALUES
+('11111111-1111-1111-1111-111111111111', 'John Doe', 'john@example.com', '1234567890', 'Mumbai'),
+('22222222-2222-2222-2222-222222222222', 'Jane Smith', 'jane@example.com', '0987654321', 'Mumbai'),
+('33333333-3333-3333-3333-333333333333', 'Alice Johnson', 'alice@example.com', '1122334455', 'Delhi');
 
 -- Insert Cinemas
 INSERT INTO cinemas (cinema_id, name, city, address) VALUES

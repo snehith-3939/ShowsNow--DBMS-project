@@ -94,11 +94,23 @@ const Checkout = () => {
   const [bookingSuccess, setBookingSuccess] = useState(null);
   const [bookingId, setBookingId] = useState(null);
   const [bookingError, setBookingError] = useState('');
+  
+  const [loyaltyBalance, setLoyaltyBalance] = useState(0);
+  const [applyPoints, setApplyPoints] = useState(false);
 
   useEffect(() => {
     if (!show_id) navigate('/');
     fetch('http://localhost:5000/api/snacks').then(r => r.json()).then(setSnacks);
-  }, []);
+    
+    if (user && token) {
+      fetch('http://localhost:5000/api/user/loyalty', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      .then(r => r.json())
+      .then(data => setLoyaltyBalance(data.balance || 0))
+      .catch(() => {});
+    }
+  }, [user, token]);
 
   const addSnack = id => setCartSnacks(p => ({ ...p, [id]: (p[id] || 0) + 1 }));
   const removeSnack = id => setCartSnacks(p => {
@@ -112,7 +124,17 @@ const Checkout = () => {
     return sum + (s ? parseFloat(s.price) * cartSnacks[id] : 0);
   }, 0);
 
-  const subtotal = totalTicketPrice + snacksTotal;
+  let subtotal = totalTicketPrice + snacksTotal;
+  
+  let pointsDiscount = 0;
+  if (applyPoints && loyaltyBalance > 0) {
+    const POINTS_MULTIPLIER = 0.10;
+    const MAX_DISCOUNT_RUPEES = 100;
+    let maxPossibleDiscount = loyaltyBalance * POINTS_MULTIPLIER;
+    pointsDiscount = Math.min(maxPossibleDiscount, MAX_DISCOUNT_RUPEES, subtotal);
+    subtotal -= pointsDiscount;
+  }
+
   const convenienceFee = CONVENIENCE_FEE * (selectedSeats.length || 1);
   const tax = (subtotal + convenienceFee) * TAX_RATE;
   const grandTotal = subtotal + convenienceFee + tax;
@@ -134,7 +156,7 @@ const Checkout = () => {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          show_id, seat_ids: selectedSeats.map(s => s.seat_id), snack_ids: snackArray
+          show_id, seat_ids: selectedSeats.map(s => s.seat_id), snack_ids: snackArray, applyPoints
         })
       });
       const result = await res.json();
@@ -242,6 +264,26 @@ const Checkout = () => {
               <span>Convenience Fee</span>
               <span>₹{convenienceFee.toFixed(2)}</span>
             </div>
+            
+            {user && loyaltyBalance > 0 && (
+              <div style={{ background: '#f8f9fa', padding: '12px', borderRadius: '6px', marginTop: '8px', border: '1px solid #e9ecef' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', margin: 0, fontWeight: '600', color: '#333' }}>
+                  <input type="checkbox" checked={applyPoints} onChange={(e) => setApplyPoints(e.target.checked)} style={{ width: '16px', height: '16px', accentColor: 'var(--bms-red)' }} />
+                  Apply Loyalty Points
+                </label>
+                <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '4px', paddingLeft: '24px' }}>
+                  You have <strong style={{color: 'var(--bms-red)'}}>{loyaltyBalance}</strong> points. Value: up to ₹{Math.min(loyaltyBalance * 0.10, 100, totalTicketPrice + snacksTotal).toFixed(2)} off.
+                </div>
+              </div>
+            )}
+
+            {pointsDiscount > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#1ea83c', fontWeight: 'bold' }}>
+                <span>Loyalty Discount applied</span>
+                <span>- ₹{pointsDiscount.toFixed(2)}</span>
+              </div>
+            )}
+
             <div style={{ display: 'flex', justifyContent: 'space-between', color: '#888', fontSize: '0.85rem' }}>
               <span>GST (18%)</span>
               <span>₹{tax.toFixed(2)}</span>

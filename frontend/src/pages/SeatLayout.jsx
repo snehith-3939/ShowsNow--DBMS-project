@@ -53,7 +53,7 @@ const SeatLayout = () => {
   });
 
   const basePrice = showInfo ? parseFloat(showInfo.base_price) : 0;
-  const surgeMultiplier = showInfo?.is_surge_active ? 1.2 : 1.0;
+  const surgeMultiplier = parseFloat(showInfo?.surge_multiplier || 1.0);
   const totalTicketPrice = selectedSeats.reduce((sum, s) => sum + (basePrice * parseFloat(s.price_multiplier) * surgeMultiplier), 0);
   const sortedTiers = ['VIP', 'Premium', 'Regular'].filter(t => tierRows[t]);
 
@@ -90,7 +90,7 @@ const SeatLayout = () => {
               </div>
             </div>
           </div>
-          {showInfo.is_surge_active && (
+          {parseFloat(showInfo.surge_multiplier) > 1.0 && (
             <div style={{ background: '#fff3cd', color: '#856404', padding: '5px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold' }}>⚡ Surge +20%</div>
           )}
         </div>

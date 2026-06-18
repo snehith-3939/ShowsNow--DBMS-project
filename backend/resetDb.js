@@ -7,10 +7,14 @@ async function resetDb() {
   const client = await pool.connect();
   try {
     const schemaSql = fs.readFileSync(path.join(__dirname, '../database/schema.sql'), 'utf8');
+    const functionsSql = fs.readFileSync(path.join(__dirname, '../database/functions.sql'), 'utf8');
     const seedSql = fs.readFileSync(path.join(__dirname, '../database/seed.sql'), 'utf8');
 
     console.log('Running schema.sql...');
     await client.query(schemaSql);
+    
+    console.log('Running functions.sql...');
+    await client.query(functionsSql);
     
     console.log('Running seed.sql...');
     await client.query(seedSql);

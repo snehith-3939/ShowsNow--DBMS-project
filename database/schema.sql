@@ -11,6 +11,8 @@ DROP TABLE IF EXISTS seats CASCADE;
 DROP TABLE IF EXISTS screens CASCADE;
 DROP TABLE IF EXISTS cinemas CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
+DROP TABLE IF EXISTS loyalty_ledger CASCADE;
+DROP TABLE IF EXISTS waitlist CASCADE;
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
@@ -21,7 +23,6 @@ CREATE TABLE users (
     password_hash VARCHAR(255),
     phone VARCHAR(20),
     city VARCHAR(100),
-    loyalty_points INTEGER DEFAULT 0,
     role VARCHAR(20) DEFAULT 'user',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -76,27 +77,27 @@ CREATE TABLE shows (
     movie_id UUID REFERENCES movies(movie_id) ON DELETE CASCADE,
     screen_id UUID REFERENCES screens(screen_id) ON DELETE CASCADE,
     show_time TIMESTAMP NOT NULL,
-    base_price DECIMAL(10, 2) NOT NULL,
-    available_seats INTEGER NOT NULL,
-    is_surge_active BOOLEAN DEFAULT FALSE,
+    base_price DECIMAL(10, 2) NOT NULL CHECK (base_price > 0),
+    surge_multiplier DECIMAL(3, 2) DEFAULT 1.00,
+    available_seats INTEGER NOT NULL CHECK (available_seats >= 0),
     UNIQUE(screen_id, show_time)
 );
 
 CREATE TABLE bookings (
     booking_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(user_id),
-    show_id UUID REFERENCES shows(show_id),
-    total_amount DECIMAL(10, 2) NOT NULL,
-    status VARCHAR(20) DEFAULT 'Pending', -- Pending, Confirmed, Cancelled
-    booking_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
+    show_id UUID REFERENCES shows(show_id) ON DELETE CASCADE,
+    booking_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    total_amount DECIMAL(10, 2) CHECK (total_amount >= 0),
+    status VARCHAR(20) DEFAULT 'Pending' CHECK (status IN ('Pending', 'Confirmed', 'Cancelled'))
 );
 
 CREATE TABLE tickets (
     ticket_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     booking_id UUID REFERENCES bookings(booking_id) ON DELETE CASCADE,
-    seat_id UUID REFERENCES seats(seat_id),
-    final_price DECIMAL(10, 2) NOT NULL,
-    UNIQUE (booking_id, seat_id)
+    seat_id UUID REFERENCES seats(seat_id) ON DELETE CASCADE,
+    final_price DECIMAL(10, 2) NOT NULL CHECK (final_price >= 0),
+    UNIQUE(booking_id, seat_id)
 );
 
 CREATE TABLE booking_snacks (
@@ -110,7 +111,43 @@ CREATE TABLE waitlist (
     waitlist_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     show_id UUID REFERENCES shows(show_id) ON DELETE CASCADE,
     user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
-    requested_seats INTEGER NOT NULL,
+    requested_seats INTEGER NOT NULL CHECK (requested_seats > 0),
     joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    status VARCHAR(20) DEFAULT 'Waiting' -- Waiting, Notified
+    status VARCHAR(20) DEFAULT 'Waiting' CHECK (status IN ('Waiting', 'Notified', 'Auto-Booked', 'Expired'))
 );
+
+CREATE TABLE loyalty_ledger (
+    ledger_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
+    booking_id UUID REFERENCES bookings(booking_id) ON DELETE CASCADE,
+    points_earned INTEGER DEFAULT 0,
+    points_spent INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP
+);
+
+-- Advanced DBMS Features: Performance Indexes
+CREATE INDEX idx_shows_movie_id ON shows(movie_id);
+CREATE INDEX idx_shows_screen_id ON shows(screen_id);
+CREATE INDEX idx_shows_show_time ON shows(show_time);
+CREATE INDEX idx_bookings_user_id ON bookings(user_id);
+CREATE INDEX idx_bookings_show_id ON bookings(show_id);
+CREATE INDEX idx_tickets_booking_id ON tickets(booking_id);
+CREATE INDEX idx_tickets_seat_id ON tickets(seat_id);
+CREATE INDEX idx_seats_screen_id ON seats(screen_id);
+CREATE INDEX idx_cinemas_city ON cinemas(city);
+
+-- Advanced DBMS Features: Views
+CREATE VIEW v_revenue_by_city AS
+SELECT c.city, COUNT(b.booking_id) as total_bookings, SUM(b.total_amount) as revenue
+FROM bookings b
+JOIN shows s ON b.show_id = s.show_id
+JOIN screens sc ON s.screen_id = sc.screen_id
+JOIN cinemas c ON sc.cinema_id = c.cinema_id
+WHERE b.status = 'Confirmed'
+GROUP BY c.city;
+
+CREATE VIEW v_active_movies AS
+SELECT DISTINCT m.* FROM movies m
+JOIN shows s ON m.movie_id = s.movie_id
+WHERE s.show_time >= NOW();

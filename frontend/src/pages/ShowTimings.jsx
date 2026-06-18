@@ -1,7 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 
+import { AppContext } from '../context/AppContext';
+
 const ShowTimings = () => {
+  const { selectedCity } = useContext(AppContext);
   const { id } = useParams();
   const navigate = useNavigate();
   const [movie, setMovie] = useState(null);
@@ -28,15 +31,15 @@ const ShowTimings = () => {
 
   useEffect(() => {
     const dateStr = toDateStr(activeDate);
-    fetch(`http://localhost:5000/api/shows/movie/${id}?date=${dateStr}`)
+    fetch(`http://localhost:5000/api/shows/movie/${id}?date=${dateStr}&city=${selectedCity}`)
       .then(res => res.json())
       .then(setShows);
-  }, [id, activeDate]);
+  }, [id, activeDate, selectedCity]);
 
   // Group shows by cinema
   const cinemas = shows.reduce((acc, show) => {
-    const key = show.cinema_name;
-    if (!acc[key]) acc[key] = { address: show.address, city: show.city, shows: [] };
+    const key = show.cinema_id;
+    if (!acc[key]) acc[key] = { cinema_name: show.cinema_name, address: show.address, city: show.city, shows: [] };
     acc[key].shows.push(show);
     return acc;
   }, {});
@@ -128,17 +131,17 @@ const ShowTimings = () => {
             <p>Try selecting a different date above.</p>
           </div>
         ) : (
-          Object.keys(cinemas).map(cinemaName => (
-            <div key={cinemaName} style={{ background: 'white', borderRadius: '8px', marginBottom: '1rem', boxShadow: '0 2px 4px rgba(0,0,0,0.06)', overflow: 'hidden' }}>
+          Object.keys(cinemas).map(cinemaId => (
+            <div key={cinemaId} style={{ background: 'white', borderRadius: '8px', marginBottom: '1rem', boxShadow: '0 2px 4px rgba(0,0,0,0.06)', overflow: 'hidden' }}>
               <div style={{ padding: '1.2rem 1.5rem', borderBottom: '1px solid #f5f5f5' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span style={{ color: 'var(--bms-red)', fontSize: '1.1rem' }}>❤</span>
-                      <span style={{ fontWeight: '700', fontSize: '1rem' }}>{cinemaName}</span>
+                      <span style={{ fontWeight: '700', fontSize: '1rem' }}>{cinemas[cinemaId].cinema_name}</span>
                     </div>
                     <div style={{ color: '#888', fontSize: '0.8rem', marginTop: '4px' }}>
-                      {cinemas[cinemaName].address}, {cinemas[cinemaName].city}
+                      {cinemas[cinemaId].address}, {cinemas[cinemaId].city}
                     </div>
                   </div>
                   {/* Cinema amenity icons */}
@@ -150,7 +153,7 @@ const ShowTimings = () => {
                 </div>
               </div>
               <div style={{ padding: '1rem 1.5rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                {cinemas[cinemaName].shows.map(show => (
+                {cinemas[cinemaId].shows.map(show => (
                   <div
                     key={show.show_id}
                     onClick={() => navigate(`/seatlayout/${show.show_id}`)}
@@ -168,7 +171,7 @@ const ShowTimings = () => {
                       {new Date(show.show_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                     </div>
                     <div style={{ fontSize: '0.65rem', color: '#888', marginTop: '3px' }}>{show.screen_name}</div>
-                    {show.is_surge_active && (
+                    {parseFloat(show.surge_multiplier) > 1.0 && (
                       <div style={{ fontSize: '0.6rem', color: 'orange', fontWeight: 'bold', marginTop: '2px' }}>⚡ Surge</div>
                     )}
                   </div>

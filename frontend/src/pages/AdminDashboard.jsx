@@ -145,11 +145,42 @@ const AdminDashboard = () => {
               <StatCard title="Total Users" value={stats.totalUsers} color="#f39c12" />
             </div>
 
-            <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ marginBottom: '1rem' }}>Quick Actions</h3>
-              <div style={{ display: 'flex', gap: '1rem' }}>
-                <button onClick={() => setActiveTab('movies')} style={actionBtnStyle}>Add New Movie</button>
-                <button onClick={() => setActiveTab('shows')} style={actionBtnStyle}>Schedule a Show</button>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+              <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+                <h3 style={{ marginBottom: '1rem', color: '#333' }}>Revenue by City (SQL View)</h3>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid #eee', color: '#888', fontSize: '0.85rem', textAlign: 'left' }}>
+                        <th style={{ padding: '10px' }}>City</th>
+                        <th style={{ padding: '10px' }}>Total Bookings</th>
+                        <th style={{ padding: '10px', textAlign: 'right' }}>Revenue</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {stats.cityRevenue && stats.cityRevenue.map((row, idx) => (
+                        <tr key={idx} style={{ borderBottom: '1px solid #eee', fontSize: '0.95rem' }}>
+                          <td style={{ padding: '10px', fontWeight: '500' }}>{row.city}</td>
+                          <td style={{ padding: '10px' }}>{row.total_bookings}</td>
+                          <td style={{ padding: '10px', textAlign: 'right', fontWeight: '700', color: '#27ae60' }}>
+                            ₹{parseFloat(row.revenue).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      ))}
+                      {(!stats.cityRevenue || stats.cityRevenue.length === 0) && (
+                        <tr><td colSpan="3" style={{ padding: '10px', textAlign: 'center', color: '#aaa' }}>No revenue data yet</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column' }}>
+                <h3 style={{ marginBottom: '1rem' }}>Quick Actions</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', flex: 1, justifyContent: 'center' }}>
+                  <button onClick={() => setActiveTab('movies')} style={{...actionBtnStyle, padding: '15px', background: '#333545', color: 'white'}}>➕ Add New Movie</button>
+                  <button onClick={() => setActiveTab('shows')} style={{...actionBtnStyle, padding: '15px', background: 'var(--bms-red)', color: 'white', border: 'none'}}>🕒 Schedule a Show</button>
+                </div>
               </div>
             </div>
           </div>

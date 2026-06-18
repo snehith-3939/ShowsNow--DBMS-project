@@ -299,7 +299,8 @@ const Navbar = () => {
                       </span>
                     )}
                   </div>
-                  <div className="drawer-item">🎟️ Your Orders</div>
+                  <div className="drawer-item" onClick={() => { navigate('/bookings'); setShowDrawer(false); }}>🎟️ Your Orders</div>
+                  <div className="drawer-item" onClick={() => { navigate('/waitlist'); setShowDrawer(false); }}>🕒 Your Waitlists</div>
                   {user.role === 'admin' && (
                     <div 
                       className="drawer-item" 
