@@ -96,7 +96,7 @@ CREATE TABLE bookings (
 CREATE TABLE tickets (
     ticket_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     booking_id UUID REFERENCES bookings(booking_id) ON DELETE CASCADE,
-    show_id UUID REFERENCES shows(show_id) ON DELETE CASCADE,
+    show_id UUID NOT NULL REFERENCES shows(show_id) ON DELETE CASCADE,
     seat_id UUID REFERENCES seats(seat_id) ON DELETE CASCADE,
     final_price DECIMAL(10, 2) NOT NULL CHECK (final_price >= 0),
     UNIQUE(booking_id, seat_id),

@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const path = require('path');
 const { query, pool } = require('./db');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
@@ -10,8 +11,16 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
 
-app.use(cors());
+const corsOrigin = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
+  : true;
+
+app.use(cors({ origin: corsOrigin }));
 app.use(express.json());
+
+app.get('/api/health', (_req, res) => {
+  res.json({ ok: true, service: 'showsnow-api' });
+});
 
 // ---------------------------------------------------------
 // JWT Auth Middleware
@@ -381,7 +390,7 @@ app.get('/api/screens', async (req, res) => {
 app.get('/api/stream', async (req, res) => {
   try {
     const TMDB_API_KEY = process.env.TMDB_API_KEY;
-    if (!TMDB_API_KEY) return res.status(500).json({ error: 'TMDB API Key missing' });
+    if (!TMDB_API_KEY) return res.json([]);
 
     const response = await fetch(`https://api.themoviedb.org/3/trending/tv/day?api_key=${TMDB_API_KEY}`);
     const data = await response.json();
@@ -982,6 +991,18 @@ Return ONLY valid JSON with these EXACT fields:
     res.status(500).json({ error: 'Agent failed to process request' });
   }
 });
+if (process.env.NODE_ENV === 'production') {
+  const frontendDist = path.join(__dirname, '../frontend/dist');
+  app.use(express.static(frontendDist));
+
+  app.use((req, res, next) => {
+    if (req.method === 'GET' && !req.path.startsWith('/api')) {
+      return res.sendFile(path.join(frontendDist, 'index.html'));
+    }
+    next();
+  });
+}
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

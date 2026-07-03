@@ -2,6 +2,7 @@ import { useState, useEffect, useContext } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { AppContext } from '../context/AppContext';
+import { apiUrl } from '../api';
 
 const CONVENIENCE_FEE = 30;
 const TAX_RATE = 0.18;
@@ -103,10 +104,10 @@ const Checkout = () => {
       navigate('/');
       return;
     }
-    fetch('http://localhost:5000/api/snacks').then(r => r.json()).then(setSnacks);
+    fetch(apiUrl('/api/snacks')).then(r => r.json()).then(setSnacks);
     
     if (user && token) {
-      fetch('http://localhost:5000/api/user/loyalty', {
+      fetch(apiUrl('/api/user/loyalty'), {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       .then(r => r.json())
@@ -152,7 +153,7 @@ const Checkout = () => {
     setBookingError('');
     const snackArray = Object.keys(cartSnacks).map(id => ({ id, quantity: cartSnacks[id] }));
     try {
-      const res = await fetch('http://localhost:5000/api/bookings', {
+      const res = await fetch(apiUrl('/api/bookings'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

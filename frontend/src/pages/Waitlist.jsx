@@ -1,6 +1,7 @@
 import { useEffect, useState, useContext } from 'react';
 import { AppContext } from '../context/AppContext';
 import { useNavigate } from 'react-router-dom';
+import { apiUrl } from '../api';
 
 const Waitlist = () => {
   const { user, token } = useContext(AppContext);
@@ -17,7 +18,7 @@ const Waitlist = () => {
 
     const fetchWaitlist = async () => {
       try {
-        const res = await fetch('http://localhost:5000/api/user/waitlist', {
+        const res = await fetch(apiUrl('/api/user/waitlist'), {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (!res.ok) throw new Error('Failed to fetch waitlist');

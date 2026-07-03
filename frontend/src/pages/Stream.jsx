@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
+import { apiUrl } from '../api';
 
 const Stream = () => {
   const [shows, setShows] = useState([]);
 
   useEffect(() => {
-    fetch('http://localhost:5000/api/stream')
+    fetch(apiUrl('/api/stream'))
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) setShows(data);

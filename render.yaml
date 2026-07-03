@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: showsnow
+    runtime: node
+    region: singapore
+    plan: free
+    buildCommand: npm ci --prefix backend && npm ci --prefix frontend && npm run build --prefix frontend
+    preDeployCommand: npm run deploy:db --prefix backend
+    startCommand: npm start --prefix backend
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_SSL
+        value: "false"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: showsnow-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: TMDB_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+
+databases:
+  - name: showsnow-db
+    region: singapore
+    databaseName: showsnow
+    user: showsnow

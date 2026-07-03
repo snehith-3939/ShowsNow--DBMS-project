@@ -161,6 +161,29 @@ Role-gated behind `role = 'admin'` in the JWT payload.
 - [Node.js](https://nodejs.org/) v16+
 - [PostgreSQL](https://www.postgresql.org/) installed and running
 
+## Deployment
+
+This repo is configured for a single Render deploy:
+
+- **Web service:** Node/Express serves both `/api/*` and the built React app from `frontend/dist`.
+- **Database:** Render PostgreSQL, connected through `DATABASE_URL`.
+- **Pre-deploy step:** `npm run deploy:db --prefix backend` creates or migrates the schema, installs triggers/views, and seeds demo data on a fresh database.
+
+Deploy steps:
+
+1. Open [Render Blueprints](https://dashboard.render.com/blueprints) and connect this GitHub repo.
+2. Render will detect `render.yaml`.
+3. Fill optional `TMDB_API_KEY` and `GEMINI_API_KEY` when prompted, or leave them blank. The app has fallback movie data and the AI agent gracefully degrades without Gemini.
+4. Create the Blueprint and wait for the first deploy to finish.
+
+The app will be available at the Render service URL, usually:
+
+```text
+https://showsnow.onrender.com
+```
+
+If that subdomain is already taken, Render will show the final URL in the service dashboard.
+
 ### 1. Database Setup
 
 Connect to PostgreSQL and create the database:

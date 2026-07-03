@@ -1,6 +1,7 @@
 import { useState, useContext, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppContext } from '../context/AppContext';
+import { apiUrl } from '../api';
 
 const AutonomousBot = () => {
   const { token } = useContext(AppContext);
@@ -27,7 +28,7 @@ const AutonomousBot = () => {
     setPrompt('');
 
     try {
-      const res = await fetch('http://localhost:5000/api/autonomous-agent', {
+      const res = await fetch(apiUrl('/api/autonomous-agent'), {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -84,7 +85,7 @@ const AutonomousBot = () => {
   const handleJoinWaitlist = async (waitlistData) => {
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:5000/api/waitlist', {
+      const res = await fetch(apiUrl('/api/waitlist'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(waitlistData)

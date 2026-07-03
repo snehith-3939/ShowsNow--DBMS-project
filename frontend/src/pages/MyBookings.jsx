@@ -1,6 +1,7 @@
 import { useEffect, useState, useContext } from 'react';
 import { AppContext } from '../context/AppContext';
 import { useNavigate } from 'react-router-dom';
+import { apiUrl } from '../api';
 
 const MyBookings = () => {
   const { user, token } = useContext(AppContext);
@@ -17,7 +18,7 @@ const MyBookings = () => {
 
     const fetchBookings = async () => {
       try {
-        const res = await fetch('http://localhost:5000/api/user/bookings', {
+        const res = await fetch(apiUrl('/api/user/bookings'), {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (!res.ok) throw new Error('Failed to fetch bookings');

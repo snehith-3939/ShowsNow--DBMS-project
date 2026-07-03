@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "node --watch index.js",
     "start": "node index.js",
+    "deploy:db": "node deployDb.js",
     "seed": "node seedData.js",
     "reset": "node resetDb.js",
     "test": "echo \"Error: no test specified\" && exit 1"
