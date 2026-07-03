@@ -48,7 +48,7 @@ async function debugAI() {
         SELECT t.seat_id 
         FROM tickets t
         JOIN bookings b ON t.booking_id = b.booking_id
-        WHERE b.show_id = $2
+        WHERE t.show_id = $2 AND b.status = 'Confirmed'
       )
       ORDER BY 
         CASE WHEN seat_type = 'VIP' THEN 1 WHEN seat_type = 'Premium' THEN 2 ELSE 3 END ASC,

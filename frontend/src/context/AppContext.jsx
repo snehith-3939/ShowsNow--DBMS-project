@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, useState, useEffect } from 'react';
 
 export const AppContext = createContext();
@@ -20,6 +21,7 @@ export const AppProvider = ({ children }) => {
   useEffect(() => {
     const storedToken = localStorage.getItem('bms_token');
     if (!storedToken) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setAuthLoading(false);
       return;
     }

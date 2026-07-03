@@ -43,6 +43,7 @@ const Category = () => {
       }));
     }
     
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setData(events);
   }, [name, selectedCity]);
 

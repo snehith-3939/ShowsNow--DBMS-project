@@ -17,13 +17,6 @@ const Navbar = () => {
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
 
-  // Listen for checkout's "open auth modal" event
-  useEffect(() => {
-    const handler = () => openAuthModal('login');
-    window.addEventListener('bms:open-auth', handler);
-    return () => window.removeEventListener('bms:open-auth', handler);
-  }, []);
-
   const cities = ['Mumbai', 'Delhi', 'Bengaluru', 'Hyderabad', 'Chandigarh', 'Pune', 'Kolkata', 'Chennai', 'All'];
 
   const handleCitySelect = (city) => {
@@ -38,6 +31,13 @@ const Navbar = () => {
     setAuthError('');
     setShowAuthModal(true);
   };
+
+  // Listen for checkout's "open auth modal" event
+  useEffect(() => {
+    const handler = () => openAuthModal('login');
+    window.addEventListener('bms:open-auth', handler);
+    return () => window.removeEventListener('bms:open-auth', handler);
+  }, []);
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault();

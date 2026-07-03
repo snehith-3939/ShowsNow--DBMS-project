@@ -65,7 +65,7 @@ const AutonomousBot = () => {
           navigate('/checkout', { state: data.payload.checkoutPayload || data.payload });
         }, 1000);
       }
-    } catch (err) {
+    } catch {
       setMessages(prev => [...prev, { sender: 'bot', text: 'Network error. Please try again.' }]);
     }
     setLoading(false);
@@ -93,7 +93,7 @@ const AutonomousBot = () => {
         setMessages(prev => [...prev, { sender: 'bot', text: 'You have been added to the waitlist! We will notify you if seats open up.' }]);
         setContext(null);
       }
-    } catch (e) {
+    } catch {
       setMessages(prev => [...prev, { sender: 'bot', text: 'Failed to join waitlist.' }]);
     }
     setLoading(false);

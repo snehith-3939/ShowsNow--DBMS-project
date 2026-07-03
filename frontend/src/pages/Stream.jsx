@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 const Stream = () => {
   const [shows, setShows] = useState([]);
-  const navigate = useNavigate();
 
   useEffect(() => {
     fetch('http://localhost:5000/api/stream')

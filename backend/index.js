@@ -131,6 +131,29 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
   }
 });
 
+// PUT /api/user/profile — update current user's profile details
+app.put('/api/user/profile', authenticateToken, async (req, res) => {
+  const { name, phone, city } = req.body;
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'Name is required.' });
+  }
+
+  try {
+    const result = await query(
+      `UPDATE users
+       SET name = $1, phone = $2, city = $3
+       WHERE user_id = $4
+       RETURNING user_id, name, email, phone, city, role, created_at`,
+      [name.trim(), phone || null, city || null, req.user.user_id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found.' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not update profile.' });
+  }
+});
+
 // GET /api/user/bookings — user's own bookings with movie/cinema info
 app.get('/api/user/bookings', authenticateToken, async (req, res) => {
   try {
@@ -234,6 +257,28 @@ app.post('/api/admin/shows', authenticateAdmin, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to add show' });
+  }
+});
+
+// Update show pricing
+app.patch('/api/admin/shows/:id', authenticateAdmin, async (req, res) => {
+  const { base_price } = req.body;
+  const parsedBasePrice = Number(base_price);
+
+  if (!Number.isFinite(parsedBasePrice) || parsedBasePrice <= 0) {
+    return res.status(400).json({ error: 'base_price must be a positive number' });
+  }
+
+  try {
+    const result = await query(
+      'UPDATE shows SET base_price = $1 WHERE show_id = $2 RETURNING *',
+      [parsedBasePrice, req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Show not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update show price' });
   }
 });
 
@@ -421,7 +466,8 @@ app.get('/api/seats/:show_id', async (req, res) => {
       FROM seats s
       JOIN shows sh ON s.screen_id = sh.screen_id
       LEFT JOIN tickets t ON t.seat_id = s.seat_id 
-           AND t.booking_id IN (SELECT booking_id FROM bookings WHERE show_id = $1 AND status = 'Confirmed')
+           AND t.show_id = $1
+           AND t.booking_id IN (SELECT booking_id FROM bookings WHERE status = 'Confirmed')
       WHERE sh.show_id = $1
       ORDER BY s.row_no, s.seat_no
     `;
@@ -503,7 +549,7 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
 
     // 1. Get show details and lock the row
     const showRes = await client.query(
-      'SELECT screen_id, base_price, surge_multiplier, available_seats FROM shows WHERE show_id = $1',
+      'SELECT screen_id, base_price, surge_multiplier, available_seats FROM shows WHERE show_id = $1 FOR UPDATE',
       [show_id]
     );
     if (showRes.rows.length === 0) throw new Error('Show not found');
@@ -519,13 +565,14 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
 
     const sortedSeatIds = [...seat_ids].sort();
     for (let seat_id of sortedSeatIds) {
-      const seatRes = await client.query('SELECT price_multiplier, screen_id FROM seats WHERE seat_id = $1 FOR UPDATE', [seat_id]);
+      const seatRes = await client.query('SELECT price_multiplier, screen_id FROM seats WHERE seat_id = $1', [seat_id]);
       if (seatRes.rows.length === 0) throw new Error('Invalid seat');
+      if (seatRes.rows[0].screen_id !== show.screen_id) throw new Error('Seat does not belong to this show');
       
       const isBooked = await client.query(`
          SELECT t.ticket_id FROM tickets t
          JOIN bookings b ON t.booking_id = b.booking_id
-         WHERE b.show_id = $1 AND b.status = 'Confirmed' AND t.seat_id = $2
+         WHERE t.show_id = $1 AND b.status = 'Confirmed' AND t.seat_id = $2
        `, [show_id, seat_id]);
       if (isBooked.rows.length > 0) throw new Error('Seat already booked');
 
@@ -590,8 +637,8 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
 
     for (const seat of finalTickets) {
       await client.query(
-        'INSERT INTO tickets (booking_id, seat_id, final_price) VALUES ($1, $2, $3)',
-        [bookingId, seat.seat_id, seat.price]
+        'INSERT INTO tickets (booking_id, show_id, seat_id, final_price) VALUES ($1, $2, $3, $4)',
+        [bookingId, show_id, seat.seat_id, seat.price]
       );
     }
 
@@ -614,6 +661,9 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
   } catch (err) {
     await client.query('ROLLBACK');
     console.error(err);
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'One or more selected seats were just booked. Please choose different seats.' });
+    }
     res.status(500).json({ error: 'Booking failed. Please try again.' });
   } finally {
     client.release();
@@ -639,6 +689,9 @@ app.post('/api/waitlist', authenticateToken, async (req, res) => {
     res.json({ success: true, message: 'Successfully joined the waitlist!' });
   } catch (err) {
     console.error('Waitlist Error:', err);
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'You are already on the waitlist for this show.' });
+    }
     res.status(500).json({ error: 'Failed to join waitlist' });
   }
 });
@@ -666,6 +719,9 @@ app.post('/api/bookings/:id/cancel', authenticateToken, async (req, res) => {
 
     // Note: The postgres trigger 'update_show_availability_and_surge' fires here 
     // and adds seats back to available_seats!
+    // Delete released tickets after the trigger has counted them so UNIQUE(show_id, seat_id)
+    // allows those seats to be booked again.
+    await client.query('DELETE FROM tickets WHERE booking_id = $1', [id]);
 
     // 3. Auto-Booking Waitlist Engine
     // Fetch all Waiting users for this show
@@ -673,6 +729,7 @@ app.post('/api/bookings/:id/cancel', authenticateToken, async (req, res) => {
       SELECT * FROM waitlist 
       WHERE show_id = $1 AND status = 'Waiting'
       ORDER BY joined_at ASC
+      FOR UPDATE SKIP LOCKED
     `, [booking.show_id]);
 
     for (let wlUser of waitlistRes.rows) {
@@ -687,7 +744,7 @@ app.post('/api/bookings/:id/cancel', authenticateToken, async (req, res) => {
             FROM seats 
             WHERE screen_id = $1
             AND seat_id NOT IN (
-               SELECT t.seat_id FROM tickets t JOIN bookings b ON t.booking_id = b.booking_id WHERE b.show_id = $2 AND b.status = 'Confirmed'
+               SELECT t.seat_id FROM tickets t JOIN bookings b ON t.booking_id = b.booking_id WHERE t.show_id = $2 AND b.status = 'Confirmed'
             )
             ORDER BY row_no ASC, seat_no ASC
          `, [show.screen_id, booking.show_id]);
@@ -713,21 +770,25 @@ app.post('/api/bookings/:id/cancel', authenticateToken, async (req, res) => {
          }
 
          if (adjacentSeats) {
-            // Auto-book!
-            const newBookingRes = await client.query(
-               'INSERT INTO bookings (user_id, show_id, status) VALUES ($1, $2, $3) RETURNING booking_id',
-               [wlUser.user_id, booking.show_id, 'Pending']
-            );
-            const newBookingId = newBookingRes.rows[0].booking_id;
-
             const basePrice = parseFloat(show.base_price);
             const surgeMultiplier = parseFloat(show.surge_multiplier) || 1.0;
+            const totalAmount = adjacentSeats.reduce(
+              (sum, seat) => sum + (basePrice * parseFloat(seat.price_multiplier) * surgeMultiplier),
+              0
+            );
+
+            // Auto-book!
+            const newBookingRes = await client.query(
+               'INSERT INTO bookings (user_id, show_id, total_amount, status) VALUES ($1, $2, $3, $4) RETURNING booking_id',
+               [wlUser.user_id, booking.show_id, totalAmount, 'Pending']
+            );
+            const newBookingId = newBookingRes.rows[0].booking_id;
             
             for (let seat of adjacentSeats) {
                const finalPrice = basePrice * parseFloat(seat.price_multiplier) * surgeMultiplier;
                await client.query(
-                  'INSERT INTO tickets (booking_id, seat_id, final_price) VALUES ($1, $2, $3)',
-                  [newBookingId, seat.seat_id, finalPrice]
+                  'INSERT INTO tickets (booking_id, show_id, seat_id, final_price) VALUES ($1, $2, $3, $4)',
+                  [newBookingId, booking.show_id, seat.seat_id, finalPrice]
                );
             }
 
@@ -885,7 +946,7 @@ Return ONLY valid JSON with these EXACT fields:
       WHERE screen_id = $1 
         AND seat_id NOT IN (
           SELECT t.seat_id FROM tickets t JOIN bookings b ON t.booking_id = b.booking_id
-          WHERE b.show_id = $2 AND b.status = 'Confirmed'
+          WHERE t.show_id = $2 AND b.status = 'Confirmed'
         )
       ORDER BY 
         CASE WHEN seat_type = 'VIP' THEN 1 WHEN seat_type = 'Premium' THEN 2 ELSE 3 END ASC,

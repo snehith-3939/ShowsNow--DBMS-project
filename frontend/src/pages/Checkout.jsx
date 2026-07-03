@@ -99,7 +99,10 @@ const Checkout = () => {
   const [applyPoints, setApplyPoints] = useState(false);
 
   useEffect(() => {
-    if (!show_id) navigate('/');
+    if (!show_id) {
+      navigate('/');
+      return;
+    }
     fetch('http://localhost:5000/api/snacks').then(r => r.json()).then(setSnacks);
     
     if (user && token) {
@@ -110,7 +113,7 @@ const Checkout = () => {
       .then(data => setLoyaltyBalance(data.balance || 0))
       .catch(() => {});
     }
-  }, [user, token]);
+  }, [navigate, show_id, user, token]);
 
   const addSnack = id => setCartSnacks(p => ({ ...p, [id]: (p[id] || 0) + 1 }));
   const removeSnack = id => setCartSnacks(p => {

@@ -15,6 +15,7 @@ const Home = () => {
   const intervalRef = useRef(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     fetch(`http://localhost:5000/api/movies?city=${encodeURIComponent(selectedCity)}`)
       .then(res => res.json())

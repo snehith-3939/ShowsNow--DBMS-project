@@ -10,7 +10,7 @@ const SeatLayout = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const preSelectedSeatIds = location.state?.preSelectedSeatIds || [];
+  const preSelectedSeatIds = location.state?.preSelectedSeatIds;
   const preCartSnacks = location.state?.preCartSnacks || {};
   
   const [seats, setSeats] = useState([]);
@@ -22,13 +22,13 @@ const SeatLayout = () => {
       .then(r => r.json())
       .then(data => {
         setSeats(data);
-        if (preSelectedSeatIds.length > 0) {
+        if (preSelectedSeatIds?.length > 0) {
           const preSelected = data.filter(s => preSelectedSeatIds.includes(s.seat_id) && !s.is_booked);
           setSelectedSeats(preSelected);
         }
       });
     fetch(`http://localhost:5000/api/shows/${id}`).then(r => r.json()).then(setShowInfo);
-  }, [id]);
+  }, [id, preSelectedSeatIds]);
 
   const toggleSeat = (seat) => {
     if (seat.is_booked) return;

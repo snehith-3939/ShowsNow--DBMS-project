@@ -96,9 +96,11 @@ CREATE TABLE bookings (
 CREATE TABLE tickets (
     ticket_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     booking_id UUID REFERENCES bookings(booking_id) ON DELETE CASCADE,
+    show_id UUID REFERENCES shows(show_id) ON DELETE CASCADE,
     seat_id UUID REFERENCES seats(seat_id) ON DELETE CASCADE,
     final_price DECIMAL(10, 2) NOT NULL CHECK (final_price >= 0),
-    UNIQUE(booking_id, seat_id)
+    UNIQUE(booking_id, seat_id),
+    UNIQUE(show_id, seat_id)
 );
 
 CREATE TABLE booking_snacks (
@@ -114,7 +116,8 @@ CREATE TABLE waitlist (
     user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
     requested_seats INTEGER NOT NULL CHECK (requested_seats > 0),
     joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    status VARCHAR(20) DEFAULT 'Waiting' CHECK (status IN ('Waiting', 'Notified', 'Auto-Booked', 'Expired'))
+    status VARCHAR(20) DEFAULT 'Waiting' CHECK (status IN ('Waiting', 'Notified', 'Auto-Booked', 'Expired')),
+    UNIQUE(show_id, user_id)
 );
 
 CREATE TABLE loyalty_ledger (
@@ -135,6 +138,7 @@ CREATE INDEX idx_bookings_user_id ON bookings(user_id);
 CREATE INDEX idx_bookings_show_id ON bookings(show_id);
 CREATE INDEX idx_tickets_booking_id ON tickets(booking_id);
 CREATE INDEX idx_tickets_seat_id ON tickets(seat_id);
+CREATE INDEX idx_tickets_show_seat ON tickets(show_id, seat_id);
 CREATE INDEX idx_seats_screen_id ON seats(screen_id);
 CREATE INDEX idx_cinemas_city ON cinemas(city);
 

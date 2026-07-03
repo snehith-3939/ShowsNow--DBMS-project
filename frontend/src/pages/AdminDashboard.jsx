@@ -21,14 +21,6 @@ const AdminDashboard = () => {
   const [cinemas, setCinemas] = useState([]);
   const [screens, setScreens] = useState([]);
 
-  useEffect(() => {
-    if (!user || user.role !== 'admin') {
-      navigate('/');
-      return;
-    }
-    fetchData();
-  }, [user, navigate]);
-
   const fetchData = async () => {
     try {
       const [statsRes, bookingsRes, moviesRes, cinemasRes, screensRes] = await Promise.all([
@@ -51,10 +43,20 @@ const AdminDashboard = () => {
       setCinemas(cinemasData);
       setScreens(screensData);
       setLoading(false);
-    } catch (err) {
-      console.error('Failed to fetch admin data:', err);
+    } catch (error) {
+      console.error('Failed to fetch admin data:', error);
     }
   };
+
+  useEffect(() => {
+    if (!user || user.role !== 'admin') {
+      navigate('/');
+      return;
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, navigate]);
 
   const handleAddMovie = async (e) => {
     e.preventDefault();
@@ -72,7 +74,7 @@ const AdminDashboard = () => {
         setMovieForm({ title: '', genre: '', duration_mins: '', language: '', poster_url: '', banner_url: '', overview: '' });
         fetchData();
       }
-    } catch (err) { alert('Error adding movie'); }
+    } catch { alert('Error adding movie'); }
   };
 
   const handleAddShow = async (e) => {
@@ -94,7 +96,7 @@ const AdminDashboard = () => {
         const data = await res.json();
         alert(data.error || 'Error scheduling show');
       }
-    } catch (err) { alert('Error scheduling show'); }
+    } catch { alert('Error scheduling show'); }
   };
 
   if (loading) return <div style={{ padding: '4rem', textAlign: 'center' }}>Loading Dashboard...</div>;

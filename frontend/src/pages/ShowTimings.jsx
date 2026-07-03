@@ -44,9 +44,6 @@ const ShowTimings = () => {
     return acc;
   }, {});
 
-  // Gather languages and formats from shows for filter chips
-  const langs = [...new Set(shows.map(s => (movie?.language || 'EN')).filter(Boolean))];
-
   const getAvailabilityColor = (avail) => {
     if (avail > 20) return '#1ea83c';
     if (avail > 5) return '#f5a623';
