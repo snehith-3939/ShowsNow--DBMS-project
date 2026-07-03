@@ -273,14 +273,14 @@ app.get('/api/movies', async (req, res) => {
     let params = [];
 
     if (city && city !== 'All') {
-      // Find movies that have shows in the selected city
+      // Find movies that have shows in the selected city, OR are coming soon (no shows needed)
       queryStr = `
         SELECT DISTINCT m.* 
         FROM movies m
-        JOIN shows s ON m.movie_id = s.movie_id
-        JOIN screens sc ON s.screen_id = sc.screen_id
-        JOIN cinemas c ON sc.cinema_id = c.cinema_id
-        WHERE c.city ILIKE $1
+        LEFT JOIN shows s ON m.movie_id = s.movie_id
+        LEFT JOIN screens sc ON s.screen_id = sc.screen_id
+        LEFT JOIN cinemas c ON sc.cinema_id = c.cinema_id
+        WHERE c.city ILIKE $1 OR m.release_date > CURRENT_DATE
       `;
       params = [city];
     }
@@ -537,8 +537,14 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
     // 4. Calculate Snacks
     let snacksTotal = 0;
     if (snack_ids && snack_ids.length > 0) {
-      const snackRes = await client.query('SELECT snack_id, price FROM snacks WHERE snack_id = ANY($1)', [snack_ids]);
-      snacksTotal = snackRes.rows.reduce((sum, s) => sum + parseFloat(s.price), 0);
+      const snackUuids = snack_ids.map(s => s.id);
+      const snackRes = await client.query('SELECT snack_id, price FROM snacks WHERE snack_id = ANY($1)', [snackUuids]);
+      
+      snacksTotal = snackRes.rows.reduce((sum, s) => {
+        const orderedSnack = snack_ids.find(reqSnack => reqSnack.id === s.snack_id);
+        const qty = orderedSnack ? orderedSnack.quantity : 1;
+        return sum + (parseFloat(s.price) * qty);
+      }, 0);
     }
 
     let totalAmount = ticketsTotal + snacksTotal;

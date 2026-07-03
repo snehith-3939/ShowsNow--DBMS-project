@@ -17,7 +17,11 @@ INSERT INTO cinemas (cinema_id, name, city, address) VALUES
 ('c7777777-7777-7777-7777-777777777777', 'Prasads IMAX', 'Hyderabad', 'Necklace Road'),
 ('c8888888-8888-8888-8888-888888888888', 'PVR Next Galleria', 'Hyderabad', 'Punjagutta'),
 ('c9999999-9999-9999-9999-999999999999', 'SPI Cinemas Sathyam', 'Chennai', 'Royapettah'),
-('caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'PVR VR Mall', 'Chennai', 'Anna Nagar');
+('caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'PVR VR Mall', 'Chennai', 'Anna Nagar'),
+('cbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'PVR Phoenix Marketcity', 'Pune', 'Viman Nagar'),
+('cccccccc-cccc-cccc-cccc-cccccccccccc', 'Cinepolis Seasons Mall', 'Pune', 'Magarpatta'),
+('cddddddd-dddd-dddd-dddd-dddddddddddd', 'Elante Mall PVR', 'Chandigarh', 'Industrial Area Phase I'),
+('ceeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'INOX South City', 'Kolkata', 'Prince Anwar Shah Road');
 
 -- Insert Screens
 INSERT INTO screens (screen_id, cinema_id, name, total_seats) VALUES
@@ -32,7 +36,11 @@ INSERT INTO screens (screen_id, cinema_id, name, total_seats) VALUES
 ('b9999999-9999-9999-9999-999999999999', 'c7777777-7777-7777-7777-777777777777', 'Large Screen', 50),
 ('baaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'c8888888-8888-8888-8888-888888888888', 'Screen 1', 50),
 ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'c9999999-9999-9999-9999-999999999999', 'Santham', 50),
-('bccccccc-cccc-cccc-cccc-cccccccccccc', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Screen 2', 50);
+('bccccccc-cccc-cccc-cccc-cccccccccccc', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Screen 2', 50),
+('bddddddd-dddd-dddd-dddd-dddddddddddd', 'cbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'Screen 1', 50),
+('beeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'Screen 4DX', 50),
+('bfffffff-ffff-ffff-ffff-ffffffffffff', 'cddddddd-dddd-dddd-dddd-dddddddddddd', 'PVR LUXE', 50),
+('b0000000-0000-0000-0000-000000000000', 'ceeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'Screen 3', 50);
 
 -- Insert Seats for ALL screens (5 rows A-E, 10 seats each)
 DO $$

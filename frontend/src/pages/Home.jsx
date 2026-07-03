@@ -47,7 +47,10 @@ const Home = () => {
     return matchSearch && matchGenre;
   });
 
-  const carouselMovies = movies.slice(0, 6);
+  const nowShowing = filteredMovies.filter(m => !m.release_date || new Date(m.release_date) <= new Date());
+  const comingSoon = filteredMovies.filter(m => m.release_date && new Date(m.release_date) > new Date());
+
+  const carouselMovies = nowShowing.slice(0, 6);
 
   const renderStars = (avg) => {
     const score = parseFloat(avg || 0);
@@ -150,7 +153,7 @@ const Home = () => {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.2rem' }}>
           <h2 className="section-title" style={{ margin: 0 }}>
             Now Showing in {selectedCity === 'All' ? 'India' : selectedCity}
-            <span style={{ fontSize: '0.85rem', color: '#999', fontWeight: 400, marginLeft: '0.6rem' }}>({filteredMovies.length} movies)</span>
+            <span style={{ fontSize: '0.85rem', color: '#999', fontWeight: 400, marginLeft: '0.6rem' }}>({nowShowing.length} movies)</span>
           </h2>
         </div>
 
@@ -173,7 +176,7 @@ const Home = () => {
 
         {/* Movie Grid */}
         <div className="movie-grid">
-          {filteredMovies.map(movie => (
+          {nowShowing.map(movie => (
             <div key={movie.movie_id} className="movie-card" onClick={() => navigate(`/movie/${movie.movie_id}`)}
               style={{ cursor: 'pointer', borderRadius: '12px', overflow: 'hidden', transition: 'transform 0.2s, box-shadow 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
               onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 12px 30px rgba(0,0,0,0.15)'; }}
@@ -198,6 +201,8 @@ const Home = () => {
                 {/* Book Now overlay on hover */}
                 <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(to top, rgba(248,68,100,0.95), transparent)', padding: '2rem 1rem 1rem', transform: 'translateY(100%)', transition: 'transform 0.25s ease', pointerEvents: 'none' }}
                   className="book-overlay">
+                  <div style={{ color: 'white', fontWeight: 'bold', textAlign: 'center', marginBottom: '0.5rem' }}>Book Tickets</div>
+                  <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.8rem', textAlign: 'center' }}>{movie.language} • {movie.genre.split(',')[0]}</div>
                 </div>
                 {/* Quick Book button */}
                 <button
@@ -218,7 +223,7 @@ const Home = () => {
               </div>
             </div>
           ))}
-          {filteredMovies.length === 0 && !loading && (
+          {nowShowing.length === 0 && !loading && (
             <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '5rem', color: '#999' }}>
               <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🎬</div>
               <h3 style={{ fontWeight: '600', color: '#555' }}>No movies found</h3>
@@ -226,6 +231,45 @@ const Home = () => {
             </div>
           )}
         </div>
+
+        {/* Coming Soon Section */}
+        {comingSoon.length > 0 && (
+          <div style={{ marginTop: '4rem' }}>
+            <h2 className="section-title" style={{ marginBottom: '1.2rem' }}>
+              Coming Soon
+              <span style={{ fontSize: '0.85rem', color: '#999', fontWeight: 400, marginLeft: '0.6rem' }}>({comingSoon.length} movies)</span>
+            </h2>
+            <div className="movie-grid">
+              {comingSoon.map(movie => (
+                <div key={movie.movie_id} className="movie-card"
+                  style={{ borderRadius: '12px', overflow: 'hidden', transition: 'transform 0.2s, box-shadow 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 12px 30px rgba(0,0,0,0.15)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)'; }}
+                >
+                  <div style={{ position: 'relative', overflow: 'hidden' }}>
+                    <img
+                      src={movie.poster_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(movie.title)}&size=300&background=333545&color=fff&bold=true`}
+                      alt={movie.title}
+                      className="poster"
+                      style={{ display: 'block', width: '100%', aspectRatio: '2/3', objectFit: 'cover' }}
+                      onError={e => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(movie.title)}&size=300&background=333545&color=fff&bold=true`; }}
+                    />
+                    {/* Release Date Banner */}
+                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(4px)', padding: '0.8rem', textAlign: 'center' }}>
+                      <div style={{ color: '#f5c518', fontWeight: 'bold', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                        Releases {new Date(movie.release_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ padding: '0.7rem 0.5rem 0.8rem' }}>
+                    <div style={{ fontWeight: '700', fontSize: '0.9rem', color: '#1a1a2e', marginBottom: '3px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{movie.title}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#888', marginBottom: '5px' }}>{movie.genre}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Hover CSS injection */}

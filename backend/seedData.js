@@ -164,17 +164,38 @@ async function seedData() {
     let movies = fallbackMovies;
 
     if (TMDB_API_KEY) {
-      console.log('Fetching realtime data from TMDB...');
+      console.log('Fetching realtime data from TMDB (Now Playing + Upcoming)...');
       try {
-        const response = await fetch(`https://api.themoviedb.org/3/trending/movie/week?api_key=${TMDB_API_KEY}`);
-        const data = await response.json();
+        const [nowPlayingRes, upcomingRes, genreRes] = await Promise.all([
+          fetch(`https://api.themoviedb.org/3/movie/now_playing?api_key=${TMDB_API_KEY}&region=IN`),
+          fetch(`https://api.themoviedb.org/3/movie/upcoming?api_key=${TMDB_API_KEY}&region=IN`),
+          fetch(`https://api.themoviedb.org/3/genre/movie/list?api_key=${TMDB_API_KEY}`)
+        ]);
 
-        const genreRes = await fetch(`https://api.themoviedb.org/3/genre/movie/list?api_key=${TMDB_API_KEY}`);
+        const nowPlayingData = await nowPlayingRes.json();
+        const upcomingData = await upcomingRes.json();
         const genreData = await genreRes.json();
+
         const genreMap = {};
         genreData.genres.forEach(g => { genreMap[g.id] = g.name; });
 
-        movies = await Promise.all(data.results.slice(0, 20).map(async m => {
+        // Take top 15 now playing + top 15 upcoming
+        const combinedMovies = [
+          ...(nowPlayingData.results || []).slice(0, 15),
+          ...(upcomingData.results || []).slice(0, 15)
+        ];
+
+        // Deduplicate by ID
+        const uniqueMovies = [];
+        const seenIds = new Set();
+        for (const m of combinedMovies) {
+          if (!seenIds.has(m.id)) {
+            seenIds.add(m.id);
+            uniqueMovies.push(m);
+          }
+        }
+
+        movies = await Promise.all(uniqueMovies.map(async m => {
           let runtime = 120;
           let trailer_key = null;
           try {
@@ -196,7 +217,8 @@ async function seedData() {
             overview: m.overview || '',
             vote_average: m.vote_average || 0,
             vote_count: m.vote_count || 0,
-            trailer_key
+            trailer_key,
+            release_date: m.release_date || new Date().toISOString().split('T')[0]
           };
         }));
       } catch(e) {
@@ -204,7 +226,7 @@ async function seedData() {
         movies = fallbackMovies;
       }
     } else {
-      console.log('No TMDB_API_KEY found, using 15 fallback movies...');
+      console.log('No TMDB_API_KEY found, using fallback movies...');
     }
 
     await client.query('BEGIN');
@@ -212,11 +234,11 @@ async function seedData() {
     let movieIdx = 0;
     for (const m of movies) {
       const res = await client.query(
-        `INSERT INTO movies (title, genre, duration_mins, language, poster_url, banner_url, overview, vote_average, vote_count, trailer_key)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING movie_id`,
+        `INSERT INTO movies (title, genre, duration_mins, language, poster_url, banner_url, overview, vote_average, vote_count, trailer_key, release_date)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING movie_id`,
         [m.title, m.genre, m.duration_mins, m.language,
          m.poster_url || null, m.banner_url || null,
-         m.overview || '', m.vote_average || 0, m.vote_count || 0, m.trailer_key || null]
+         m.overview || '', m.vote_average || 0, m.vote_count || 0, m.trailer_key || null, m.release_date || null]
       );
       
       const movieId = res.rows[0].movie_id;
@@ -226,23 +248,28 @@ async function seedData() {
       const allScreens = screensRes.rows;
 
       if (allScreens.length > 0) {
-        // Standard cinema slot hours (from midnight today) — looks like real BookMyShow timings
-        // Each movie is offset by 15 mins per slot to satisfy UNIQUE(screen_id, show_time)
-        // So Movie 0 = 10:30, 13:30, 16:30, 19:30
-        //    Movie 1 = 10:45, 13:45, 16:45, 19:45
-        //    Movie 2 = 11:00, 14:00, 17:00, 20:00  etc.
         const baseSlotMinutes = [630, 810, 990, 1170]; // 10:30, 13:30, 16:30, 19:30 in mins from midnight
 
         for (const screen of allScreens) {
-          for (let dayOffset = 0; dayOffset < 5; dayOffset++) {
-            for (const baseMin of baseSlotMinutes) {
-              const slotMin = baseMin + (movieIdx * 15); // 15-min stagger per movie
-              await client.query(
-                `INSERT INTO shows (movie_id, screen_id, show_time, base_price, available_seats)
-                 VALUES ($1, $2, DATE_TRUNC('day', NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata' + ($3 || ' days')::INTERVAL + ($4 || ' minutes')::INTERVAL, $5, 50)
-                 ON CONFLICT DO NOTHING`,
-                [movieId, screen.screen_id, dayOffset, slotMin, Math.floor(Math.random() * 200) + 200]
-              );
+          for (let dayOffset = 0; dayOffset < 7; dayOffset++) { // Schedule up to 7 days out
+            
+            // Check if the show date is >= release_date
+            const showDate = new Date();
+            showDate.setDate(showDate.getDate() + dayOffset);
+            showDate.setHours(0,0,0,0);
+            const releaseDate = new Date(m.release_date);
+            releaseDate.setHours(0,0,0,0);
+
+            if (showDate >= releaseDate) {
+              for (const baseMin of baseSlotMinutes) {
+                const slotMin = baseMin + (movieIdx * 15); // 15-min stagger per movie
+                await client.query(
+                  `INSERT INTO shows (movie_id, screen_id, show_time, base_price, available_seats)
+                   VALUES ($1, $2, DATE_TRUNC('day', NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata' + ($3 || ' days')::INTERVAL + ($4 || ' minutes')::INTERVAL, $5, 50)
+                   ON CONFLICT DO NOTHING`,
+                  [movieId, screen.screen_id, dayOffset, slotMin, Math.floor(Math.random() * 200) + 200]
+                );
+              }
             }
           }
         }

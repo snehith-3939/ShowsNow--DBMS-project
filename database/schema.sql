@@ -62,7 +62,8 @@ CREATE TABLE movies (
     overview TEXT,
     vote_average DECIMAL(3,1) DEFAULT 0.0,
     vote_count INTEGER DEFAULT 0,
-    trailer_key VARCHAR(100)
+    trailer_key VARCHAR(100),
+    release_date DATE
 );
 
 CREATE TABLE snacks (
