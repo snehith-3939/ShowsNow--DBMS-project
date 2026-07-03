@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 
 import { useLocation } from 'react-router-dom';
-import { apiUrl } from '../api';
 
 const TIER_COLORS = { VIP: '#9b59b6', Premium: '#2980b9', Regular: '#1ea83c' };
 const MAX_SEATS = 10;
@@ -19,7 +18,7 @@ const SeatLayout = () => {
   const [selectedSeats, setSelectedSeats] = useState([]);
 
   useEffect(() => {
-    fetch(apiUrl(`/api/seats/${id}`))
+    fetch(`http://localhost:5000/api/seats/${id}`)
       .then(r => r.json())
       .then(data => {
         setSeats(data);
@@ -28,7 +27,7 @@ const SeatLayout = () => {
           setSelectedSeats(preSelected);
         }
       });
-    fetch(apiUrl(`/api/shows/${id}`)).then(r => r.json()).then(setShowInfo);
+    fetch(`http://localhost:5000/api/shows/${id}`).then(r => r.json()).then(setShowInfo);
   }, [id, preSelectedSeatIds]);
 
   const toggleSeat = (seat) => {

@@ -2,7 +2,6 @@ import { useState, useEffect, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 
 import { AppContext } from '../context/AppContext';
-import { apiUrl } from '../api';
 
 const ShowTimings = () => {
   const { selectedCity } = useContext(AppContext);
@@ -25,14 +24,14 @@ const ShowTimings = () => {
   const activeDate = selectedDate || dates[0];
 
   useEffect(() => {
-    fetch(apiUrl(`/api/movies/${id}`))
+    fetch(`http://localhost:5000/api/movies/${id}`)
       .then(res => res.json())
       .then(setMovie);
   }, [id]);
 
   useEffect(() => {
     const dateStr = toDateStr(activeDate);
-    fetch(apiUrl(`/api/shows/movie/${id}?date=${dateStr}&city=${selectedCity}`))
+    fetch(`http://localhost:5000/api/shows/movie/${id}?date=${dateStr}&city=${selectedCity}`)
       .then(res => res.json())
       .then(setShows);
   }, [id, activeDate, selectedCity]);

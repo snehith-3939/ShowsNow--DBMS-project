@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { apiUrl } from '../api';
 
 const MovieDetails = () => {
   const { id } = useParams();
@@ -9,7 +8,7 @@ const MovieDetails = () => {
   const [trailerKey, setTrailerKey] = useState(null);
 
   useEffect(() => {
-    fetch(apiUrl(`/api/movies/${id}`))
+    fetch(`http://localhost:5000/api/movies/${id}`)
       .then(res => res.json())
       .then(setMovie);
   }, [id]);

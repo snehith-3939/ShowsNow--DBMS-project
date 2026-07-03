@@ -1,7 +1,6 @@
 import { useState, useEffect, useContext, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppContext } from '../context/AppContext';
-import { apiUrl } from '../api';
 
 const GENRES = ['All', 'Action', 'Animation', 'Drama', 'Horror', 'Science Fiction', 'Musical', 'Thriller'];
 
@@ -18,7 +17,7 @@ const Home = () => {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
-    fetch(apiUrl(`/api/movies?city=${encodeURIComponent(selectedCity)}`))
+    fetch(`http://localhost:5000/api/movies?city=${encodeURIComponent(selectedCity)}`)
       .then(res => res.json())
       .then(data => { setMovies(data); setLoading(false); })
       .catch(() => setLoading(false));

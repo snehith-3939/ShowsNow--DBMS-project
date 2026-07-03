@@ -1,20 +1,15 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
-const poolConfig = process.env.DATABASE_URL
-  ? {
-      connectionString: process.env.DATABASE_URL,
-      ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false },
-    }
-  : {
-      user: process.env.DB_USER || 'postgres',
-      host: process.env.DB_HOST || 'localhost',
-      database: process.env.DB_NAME || 'bookmyshow',
-      password: process.env.DB_PASSWORD || 'postgres',
-      port: process.env.DB_PORT || 5432,
-    };
-
-const pool = new Pool(poolConfig);
+// Assuming default PostgreSQL credentials for local development
+// Users can override these in a .env file
+const pool = new Pool({
+  user: process.env.DB_USER || 'postgres',
+  host: process.env.DB_HOST || 'localhost',
+  database: process.env.DB_NAME || 'bookmyshow',
+  password: process.env.DB_PASSWORD || 'postgres',
+  port: process.env.DB_PORT || 5432,
+});
 
 // A wrapper to execute queries easily
 const query = async (text, params) => {

@@ -1,7 +1,6 @@
 import { useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppContext } from '../context/AppContext';
-import { apiUrl } from '../api';
 
 const AdminDashboard = () => {
   const { user, token } = useContext(AppContext);
@@ -25,11 +24,11 @@ const AdminDashboard = () => {
   const fetchData = async () => {
     try {
       const [statsRes, bookingsRes, moviesRes, cinemasRes, screensRes] = await Promise.all([
-        fetch(apiUrl('/api/admin/stats'), { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(apiUrl('/api/admin/bookings'), { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(apiUrl('/api/movies')),
-        fetch(apiUrl('/api/cinemas')),
-        fetch(apiUrl('/api/screens'))
+        fetch('http://localhost:5000/api/admin/stats', { headers: { Authorization: `Bearer ${token}` } }),
+        fetch('http://localhost:5000/api/admin/bookings', { headers: { Authorization: `Bearer ${token}` } }),
+        fetch('http://localhost:5000/api/movies'),
+        fetch('http://localhost:5000/api/cinemas'),
+        fetch('http://localhost:5000/api/screens')
       ]);
 
       const statsData = await statsRes.json();
@@ -62,7 +61,7 @@ const AdminDashboard = () => {
   const handleAddMovie = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(apiUrl('/api/admin/movies'), {
+      const res = await fetch('http://localhost:5000/api/admin/movies', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -81,7 +80,7 @@ const AdminDashboard = () => {
   const handleAddShow = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(apiUrl('/api/admin/shows'), {
+      const res = await fetch('http://localhost:5000/api/admin/shows', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',

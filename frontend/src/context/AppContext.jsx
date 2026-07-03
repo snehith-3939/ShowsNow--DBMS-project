@@ -1,8 +1,9 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useState, useEffect } from 'react';
-import { apiUrl } from '../api';
 
 export const AppContext = createContext();
+
+const API = 'http://localhost:5000';
 
 export const AppProvider = ({ children }) => {
   const [selectedCity, setSelectedCity] = useState(localStorage.getItem('bms_city') || 'Mumbai');
@@ -24,7 +25,7 @@ export const AppProvider = ({ children }) => {
       setAuthLoading(false);
       return;
     }
-    fetch(apiUrl('/api/auth/me'), {
+    fetch(`${API}/api/auth/me`, {
       headers: { Authorization: `Bearer ${storedToken}` }
     })
       .then(r => {
@@ -58,7 +59,7 @@ export const AppProvider = ({ children }) => {
    */
   const register = async (name, email, password, phone) => {
     try {
-      const res = await fetch(apiUrl('/api/auth/register'), {
+      const res = await fetch(`${API}/api/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, password, phone })
@@ -78,7 +79,7 @@ export const AppProvider = ({ children }) => {
    */
   const login = async (email, password) => {
     try {
-      const res = await fetch(apiUrl('/api/auth/login'), {
+      const res = await fetch(`${API}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
