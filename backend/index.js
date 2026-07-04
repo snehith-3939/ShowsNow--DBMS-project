@@ -189,7 +189,12 @@ app.get('/api/user/bookings', authenticateToken, async (req, res) => {
              m.title, m.poster_url,
              c.name as cinema_name, c.city,
              sc.name as screen_name,
-             s.show_time
+             s.show_time,
+             (
+                SELECT json_agg(json_build_object('row_no', bs.row_no, 'seat_no', bs.seat_no))
+                FROM booking_seats bs
+                WHERE bs.booking_id = b.booking_id
+             ) as seats
       FROM bookings b
       JOIN shows s ON b.show_id = s.show_id
       JOIN movies m ON s.movie_id = m.movie_id
