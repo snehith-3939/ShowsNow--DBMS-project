@@ -258,7 +258,7 @@ async function seedData() {
             s.screen_id, 
             DATE_TRUNC('day', NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata' 
               + (d.dayOffset || ' days')::INTERVAL 
-              + ((slots.baseMin + ($2::int * 15)) || ' minutes')::INTERVAL,
+              + ((slots.baseMin + ($2::int * 15) + MOD(ABS(hashtext(s.screen_id::text)), 180)) || ' minutes')::INTERVAL,
             FLOOR(RANDOM() * 200) + 200,
             s.total_seats
         FROM movies m
