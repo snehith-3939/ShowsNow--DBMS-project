@@ -8,7 +8,7 @@
     "seed": "node seedData.js",
     "refresh-shows": "node resetDb.js && node seedData.js",
     "reset": "node resetDb.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test:admin-root-cause": "node test-admin-root-cause.js"
   },
   "keywords": [],
   "author": "",

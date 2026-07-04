@@ -45,11 +45,21 @@ const authenticateToken = (req, res, next) => {
 };
 
 const authenticateAdmin = (req, res, next) => {
-  authenticateToken(req, res, () => {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Access denied. Admin privileges required.' });
+  authenticateToken(req, res, async () => {
+    try {
+      const result = await query('SELECT role FROM users WHERE user_id = $1', [req.user.user_id]);
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: 'User not found.' });
+      }
+      if (result.rows[0].role !== 'admin') {
+        return res.status(403).json({ error: 'Access denied. Admin privileges required.' });
+      }
+      req.user.role = result.rows[0].role;
+      next();
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: 'Could not verify admin privileges.' });
     }
-    next();
   });
 };
 

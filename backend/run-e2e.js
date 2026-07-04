@@ -1,6 +1,4 @@
-const jwt = require('jsonwebtoken');
 require('dotenv').config({ path: '../backend/.env' });
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
 
 const API = 'http://localhost:5000/api';
 
@@ -16,6 +14,26 @@ async function registerUser(email, name) {
   return await res.json();
 }
 
+async function findShowWithAvailableSeats(minSeats) {
+  const moviesRes = await fetch(`${API}/movies`);
+  const movies = await moviesRes.json();
+
+  for (const movie of movies) {
+    const showsRes = await fetch(`${API}/shows/movie/${movie.movie_id}`);
+    const shows = await showsRes.json();
+    for (const show of shows) {
+      const seatsRes = await fetch(`${API}/seats/${show.show_id}`);
+      const seats = await seatsRes.json();
+      const availableSeats = seats.filter(s => !s.is_booked && !s.is_held);
+      if (availableSeats.length >= minSeats) {
+        return { showId: show.show_id, availableSeats };
+      }
+    }
+  }
+
+  throw new Error(`No show found with at least ${minSeats} available seats. Run backend seed/reset first.`);
+}
+
 async function runE2E() {
   console.log('--- STARTING E2E CONCURRENCY & DRY RUN VERIFICATIONS ---');
   
@@ -23,19 +41,9 @@ async function runE2E() {
   const ts = Date.now();
   const u1 = await registerUser(`u1_${ts}@test.com`, 'Concurrency User 1');
   const u2 = await registerUser(`u2_${ts}@test.com`, 'Concurrency User 2');
-  const u1Token = jwt.sign({ user_id: u1.user.user_id, role: 'user' }, JWT_SECRET);
-  const u2Token = jwt.sign({ user_id: u2.user.user_id, role: 'user' }, JWT_SECRET);
-  const adminToken = jwt.sign({ user_id: '11111111-1111-1111-1111-111111111111', role: 'admin' }, JWT_SECRET);
-
-  const statsRes = await fetch(`${API}/admin/stats`, { headers: { 'Authorization': `Bearer ${adminToken}` } });
-  const stats = await statsRes.json();
-  const showId = stats.topOccupancy[0].show_id;
-  
-  const seatsRes = await fetch(`${API}/seats/${showId}`);
-  const seats = await seatsRes.json();
-  
-  // Find two empty seats
-  const availableSeats = seats.filter(s => !s.is_booked && !s.is_held);
+  const u1Token = u1.token;
+  const u2Token = u2.token;
+  const { showId, availableSeats } = await findShowWithAvailableSeats(4);
   const seatA = availableSeats[0].seat_id;
   const seatB = availableSeats[1].seat_id;
 
@@ -106,7 +114,7 @@ async function runE2E() {
 
   console.log(`\n=== TEST 11: Waitlist Promotion ===`);
   const wlUser = await registerUser(`wl_${ts}@test.com`, 'Waitlist User');
-  const wlToken = jwt.sign({ user_id: wlUser.user.user_id, role: 'user' }, JWT_SECRET);
+  const wlToken = wlUser.token;
   
   // 1. Join Waitlist for 1 seat
   const wlJoin = await fetch(`${API}/waitlist`, {

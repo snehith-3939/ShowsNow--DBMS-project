@@ -11,6 +11,7 @@ const AdminDashboard = () => {
   const [bookings, setBookings] = useState([]);
   const [waitlists, setWaitlists] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [adminError, setAdminError] = useState('');
 
   // Forms State
   const [movieForm, setMovieForm] = useState({
@@ -27,8 +28,35 @@ const AdminDashboard = () => {
   const [shows, setShows] = useState([]);
   const [pricingForm, setPricingForm] = useState({ show_id: '', base_price: '' });
 
+  const readJsonOrThrow = async (res, label) => {
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(`${label} failed (${res.status}): ${data.error || 'Unexpected response'}`);
+    }
+    return data;
+  };
+
+  const expectArray = (value, label) => {
+    if (!Array.isArray(value)) {
+      throw new Error(`${label} returned ${typeof value}, expected array`);
+    }
+    return value;
+  };
+
+  const expectAdminStats = (value) => {
+    if (!value || typeof value !== 'object' || !Object.prototype.hasOwnProperty.call(value, 'totalRevenue')) {
+      throw new Error('Admin stats response is missing totalRevenue');
+    }
+    if (!Number.isFinite(Number(value.totalRevenue))) {
+      throw new Error(`Admin stats totalRevenue is not numeric: ${value.totalRevenue}`);
+    }
+    return value;
+  };
+
   const fetchData = async () => {
     try {
+      setAdminError('');
+      setLoading(true);
       const headers = { Authorization: `Bearer ${token}` };
       const [statsRes, bookingsRes, moviesRes, cinemasRes, screensRes, waitlistsRes] = await Promise.all([
         fetch('http://localhost:5000/api/admin/stats', { headers }),
@@ -39,22 +67,24 @@ const AdminDashboard = () => {
         fetch('http://localhost:5000/api/admin/waitlists', { headers })
       ]);
 
-      const statsData = statsRes.ok ? await statsRes.json() : null;
-      const bookingsData = bookingsRes.ok ? await bookingsRes.json() : [];
-      const moviesData = moviesRes.ok ? await moviesRes.json() : [];
-      const cinemasData = cinemasRes.ok ? await cinemasRes.json() : [];
-      const screensData = screensRes.ok ? await screensRes.json() : [];
-      const waitlistsData = waitlistsRes.ok ? await waitlistsRes.json() : [];
+      const statsData = expectAdminStats(await readJsonOrThrow(statsRes, 'Admin stats'));
+      const bookingsData = expectArray(await readJsonOrThrow(bookingsRes, 'Admin bookings'), 'Admin bookings');
+      const moviesData = expectArray(await readJsonOrThrow(moviesRes, 'Movies'), 'Movies');
+      const cinemasData = expectArray(await readJsonOrThrow(cinemasRes, 'Cinemas'), 'Cinemas');
+      const screensData = expectArray(await readJsonOrThrow(screensRes, 'Screens'), 'Screens');
+      const waitlistsData = expectArray(await readJsonOrThrow(waitlistsRes, 'Admin waitlists'), 'Admin waitlists');
 
-      if (statsData) setStats(statsData);
-      setBookings(Array.isArray(bookingsData) ? bookingsData : []);
-      setMovies(Array.isArray(moviesData) ? moviesData : []);
-      setCinemas(Array.isArray(cinemasData) ? cinemasData : []);
-      setScreens(Array.isArray(screensData) ? screensData : []);
-      setWaitlists(Array.isArray(waitlistsData) ? waitlistsData : []);
-      setLoading(false);
+      setStats(statsData);
+      setBookings(bookingsData);
+      setMovies(moviesData);
+      setCinemas(cinemasData);
+      setScreens(screensData);
+      setWaitlists(waitlistsData);
     } catch (error) {
       console.error('Failed to fetch admin data:', error);
+      setAdminError(error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -173,10 +203,16 @@ const AdminDashboard = () => {
             <div style={{ fontSize: '0.9rem', color: 'var(--bms-muted)' }}>Logged in as {user.name} <span style={{ padding: '3px 8px', background: 'rgba(200, 169, 110, 0.2)', color: 'var(--bms-red)', borderRadius: '4px', marginLeft: '10px', fontSize: '0.8rem', fontWeight: 'bold' }}>ADMIN</span></div>
           </div>
 
+          {adminError && (
+            <div style={{ ...cardStyle, border: '1px solid rgba(239, 68, 68, 0.45)', color: '#fecaca', marginBottom: '1.5rem' }}>
+              {adminError}
+            </div>
+          )}
+
           {activeTab === 'overview' && stats && (
             <div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem', marginBottom: '3rem' }}>
-                <StatCard title="Total Revenue" value={`₹${(parseFloat(stats.totalRevenue) || 0).toLocaleString()}`} color="#22c55e" />
+                <StatCard title="Total Revenue" value={`₹${Number(stats.totalRevenue).toLocaleString()}`} color="#22c55e" />
                 <StatCard title="Total Bookings" value={stats.totalBookings} color="#3b82f6" />
                 <StatCard title="Live Movies" value={stats.totalMovies} color="#a855f7" />
                 <StatCard title="Total Users" value={stats.totalUsers} color="var(--bms-red)" />
