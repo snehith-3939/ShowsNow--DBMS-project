@@ -22,7 +22,7 @@ The platform supports multi-city movie browsing, interactive seat selection, a f
 
 | Layer | Technology |
 |---|---|
-| **Frontend** | React 18 (Vite), React Router v6, Context API, Vanilla CSS |
+| **Frontend** | React 19 (Vite), React Router v7, Context API, Vanilla CSS |
 | **Backend** | Node.js, Express.js, REST API |
 | **Database** | PostgreSQL, PL/pgSQL triggers and functions |
 | **Auth** | JSON Web Tokens (`jsonwebtoken`), `bcryptjs` password hashing |
@@ -35,16 +35,20 @@ The platform supports multi-city movie browsing, interactive seat selection, a f
 
 ### Database Schema
 
-The schema is fully normalized with 11 tables and enforces referential integrity with `ON DELETE CASCADE` throughout:
+The schema is normalized across core business tables plus lookup/reference tables, and enforces referential integrity with foreign keys throughout:
+
+This version also includes DBMS project upgrades such as payment records, temporary seat holds, audit logs, lookup/reference tables, expiry routines, and additional reporting views. See [`DBMS_PROJECT_NOTES.md`](DBMS_PROJECT_NOTES.md) and [`database/dbms_checks.sql`](database/dbms_checks.sql) for viva/demo material.
 
 ```
 users ──────────────────────────────────────────────────────────────┐
                                                                      │
 cinemas → screens → seats ──────────────────────────────────────────│
                    └──→ shows ──→ bookings ──→ tickets ─────────────┘
+                           │                ├──→ payments
                            │                └──→ booking_snacks
-                           └──→ waitlist
-                                           └──→ loyalty_ledger
+                           ├──→ waitlist
+                           └──→ seat_holds
+                                            └──→ loyalty_ledger
 ```
 
 | Table | Purpose |
@@ -57,24 +61,33 @@ cinemas → screens → seats ────────────────�
 | `shows` | Scheduled screenings linking a movie to a screen, with `base_price`, `available_seats`, and a live `surge_multiplier` |
 | `bookings` | Transactional booking record per user per show, with status (`Pending` → `Confirmed` → `Cancelled`) |
 | `tickets` | Individual seat within a booking, with the final computed price at time of purchase |
+| `payments` | Payment method/status/transaction record linked one-to-one with a booking |
+| `seat_holds` | Temporary checkout locks so selected seats cannot be grabbed by another user |
 | `booking_snacks` | Composite-key junction table linking food add-ons to a booking |
 | `waitlist` | Queue system for sold-out shows with auto-status updates (`Waiting`, `Notified`, `Auto-Booked`, `Expired`) |
 | `loyalty_ledger` | Immutable ledger of points earned and spent, with a 60-day expiry per entry |
+| `admin_audit_logs` | Audit trail for admin/system actions such as show changes, cancellations, and refunds |
 
 ### Performance Indexes
 
-9 targeted B-tree indexes on all high-frequency join and filter columns (`shows.movie_id`, `shows.show_time`, `bookings.user_id`, `seats.screen_id`, `cinemas.city`, etc.) to keep queries fast under load.
+Targeted B-tree and partial indexes on all high-frequency join and filter columns (`shows.movie_id`, `shows.show_time`, `bookings.user_id`, `seats.screen_id`, `cinemas.city`, active seat holds, payments, etc.) keep queries fast under load.
 
 ### Database Views
 
 - **`v_revenue_by_city`** — Aggregates confirmed booking revenue grouped by city. Used directly in the Admin Dashboard analytics panel.
 - **`v_active_movies`** — Returns only movies that have at least one future show, used by the home page API.
+- **`v_revenue_by_movie`** — Aggregates bookings, tickets sold, and revenue by movie.
+- **`v_revenue_by_cinema`** — Aggregates bookings, tickets sold, and revenue by cinema.
+- **`v_show_occupancy`** — Tracks booked seats, available seats, occupancy percentage, and surge multiplier per show.
+- **`v_top_users`** — Ranks users by spend, bookings, and loyalty balance.
 
 ---
 
 ## Database Triggers & PL/pgSQL Functions
 
 Two AFTER UPDATE triggers run automatically on the `bookings` table on every status change.
+
+Two utility functions, `expire_seat_holds()` and `expire_pending_bookings()`, keep temporary checkout state clean.
 
 ### 1. `update_show_availability_and_surge`
 

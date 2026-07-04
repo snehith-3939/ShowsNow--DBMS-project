@@ -244,7 +244,7 @@ async function seedData() {
       const movieId = res.rows[0].movie_id;
       
       // Assign this movie to EVERY screen across ALL cities
-      const screensRes = await client.query('SELECT screen_id FROM screens');
+      const screensRes = await client.query('SELECT screen_id, total_seats FROM screens');
       const allScreens = screensRes.rows;
 
       if (allScreens.length > 0) {
@@ -265,9 +265,9 @@ async function seedData() {
                 const slotMin = baseMin + (movieIdx * 15); // 15-min stagger per movie
                 await client.query(
                   `INSERT INTO shows (movie_id, screen_id, show_time, base_price, available_seats)
-                   VALUES ($1, $2, DATE_TRUNC('day', NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata' + ($3 || ' days')::INTERVAL + ($4 || ' minutes')::INTERVAL, $5, 50)
+                   VALUES ($1, $2, DATE_TRUNC('day', NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata' + ($3 || ' days')::INTERVAL + ($4 || ' minutes')::INTERVAL, $5, $6)
                    ON CONFLICT DO NOTHING`,
-                  [movieId, screen.screen_id, dayOffset, slotMin, Math.floor(Math.random() * 200) + 200]
+                  [movieId, screen.screen_id, dayOffset, slotMin, Math.floor(Math.random() * 200) + 200, screen.total_seats]
                 );
               }
             }

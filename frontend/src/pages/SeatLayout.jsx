@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 
 import { useLocation } from 'react-router-dom';
+import { AppContext } from '../context/AppContext';
 
 const TIER_COLORS = { VIP: '#9b59b6', Premium: '#2980b9', Regular: '#1ea83c' };
 const MAX_SEATS = 10;
@@ -10,6 +11,7 @@ const SeatLayout = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const { user, token } = useContext(AppContext);
   const preSelectedSeatIds = location.state?.preSelectedSeatIds;
   const preCartSnacks = location.state?.preCartSnacks || {};
   
@@ -23,7 +25,7 @@ const SeatLayout = () => {
       .then(data => {
         setSeats(data);
         if (preSelectedSeatIds?.length > 0) {
-          const preSelected = data.filter(s => preSelectedSeatIds.includes(s.seat_id) && !s.is_booked);
+          const preSelected = data.filter(s => preSelectedSeatIds.includes(s.seat_id) && !s.is_booked && !s.is_held);
           setSelectedSeats(preSelected);
         }
       });
@@ -31,7 +33,7 @@ const SeatLayout = () => {
   }, [id, preSelectedSeatIds]);
 
   const toggleSeat = (seat) => {
-    if (seat.is_booked) return;
+    if (seat.is_booked || seat.is_held) return;
     if (selectedSeats.find(s => s.seat_id === seat.seat_id)) {
       setSelectedSeats(selectedSeats.filter(s => s.seat_id !== seat.seat_id));
     } else {
@@ -57,19 +59,46 @@ const SeatLayout = () => {
   const totalTicketPrice = selectedSeats.reduce((sum, s) => sum + (basePrice * parseFloat(s.price_multiplier) * surgeMultiplier), 0);
   const sortedTiers = ['VIP', 'Premium', 'Regular'].filter(t => tierRows[t]);
 
+  const proceedToCheckout = async () => {
+    if (user && token) {
+      try {
+        const res = await fetch('http://localhost:5000/api/seat-holds', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ show_id: id, seat_ids: selectedSeats.map(s => s.seat_id) })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.error || 'Could not hold selected seats. Please choose again.');
+          window.location.reload();
+          return;
+        }
+      } catch {
+        alert('Network error while holding seats.');
+        return;
+      }
+    }
+
+    navigate('/checkout', { state: { show_id: id, selectedSeats, showInfo, totalTicketPrice, preCartSnacks } });
+  };
+
   const renderSeat = (seat) => {
     const isSelected = selectedSeats.some(s => s.seat_id === seat.seat_id);
+    const isUnavailable = seat.is_booked || seat.is_held;
     const color = TIER_COLORS[seat.seat_type] || '#1ea83c';
     return (
       <div key={seat.seat_id} onClick={() => toggleSeat(seat)}
-        title={`${seat.row_no}${seat.seat_no} - ${seat.seat_type}`}
+        title={`${seat.row_no}${seat.seat_no} - ${seat.is_held ? 'Temporarily held' : seat.seat_type}`}
         style={{
           width: '26px', height: '26px', borderRadius: '4px 4px 0 0',
-          border: seat.is_booked ? 'none' : `1px solid ${color}`,
-          background: seat.is_booked ? '#e0e0e0' : isSelected ? color : 'white',
-          cursor: seat.is_booked ? 'not-allowed' : 'pointer',
+          border: isUnavailable ? 'none' : `1px solid ${color}`,
+          background: isUnavailable ? '#e0e0e0' : isSelected ? color : 'white',
+          cursor: isUnavailable ? 'not-allowed' : 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '0.6rem', color: isSelected ? 'white' : (seat.is_booked ? '#bbb' : color),
+          fontSize: '0.6rem', color: isSelected ? 'white' : (isUnavailable ? '#bbb' : color),
           transition: 'all 0.1s'
         }}
       >{seat.seat_no}</div>
@@ -132,6 +161,7 @@ const SeatLayout = () => {
           <span><span style={{ display: 'inline-block', width: '12px', height: '12px', border: '1px solid #1ea83c', marginRight: '5px' }} />Available</span>
           <span><span style={{ display: 'inline-block', width: '12px', height: '12px', background: '#1ea83c', marginRight: '5px' }} />Selected</span>
           <span><span style={{ display: 'inline-block', width: '12px', height: '12px', background: '#e0e0e0', marginRight: '5px' }} />Sold</span>
+          <span><span style={{ display: 'inline-block', width: '12px', height: '12px', background: '#e0e0e0', marginRight: '5px' }} />Held</span>
         </div>
       </div>
 
@@ -142,7 +172,7 @@ const SeatLayout = () => {
             <div style={{ fontSize: '0.8rem', color: '#888' }}>{selectedSeats.map(s => `${s.row_no}${s.seat_no}`).join(', ')}</div>
           </div>
           <button
-            onClick={() => navigate('/checkout', { state: { show_id: id, selectedSeats, showInfo, totalTicketPrice, preCartSnacks } })}
+            onClick={proceedToCheckout}
             style={{ background: 'var(--bms-red)', color: 'white', border: 'none', padding: '12px 32px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '1.1rem' }}
           >Pay →</button>
         </div>

@@ -9,9 +9,23 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
+const HOLD_MINUTES = 10;
+const PAYMENT_METHODS = new Set(['Demo', 'UPI', 'Card', 'NetBanking', 'Wallet', 'Cash']);
 
 app.use(cors());
 app.use(express.json());
+
+const isUuid = (value) =>
+  typeof value === 'string' &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+
+async function logAdminAction(db, adminId, action, entityType, entityId, details = {}) {
+  await db.query(
+    `INSERT INTO admin_audit_logs (admin_id, action, entity_type, entity_id, details)
+     VALUES ($1, $2, $3, $4, $5::jsonb)`,
+    [adminId, action, entityType, entityId || null, JSON.stringify(details)]
+  );
+}
 
 // ---------------------------------------------------------
 // JWT Auth Middleware
@@ -159,6 +173,7 @@ app.get('/api/user/bookings', authenticateToken, async (req, res) => {
   try {
     const sql = `
       SELECT b.booking_id, b.total_amount, b.status, b.booking_time,
+             p.status as payment_status, p.method as payment_method, p.transaction_ref,
              m.title, m.poster_url,
              c.name as cinema_name, c.city,
              sc.name as screen_name,
@@ -168,6 +183,7 @@ app.get('/api/user/bookings', authenticateToken, async (req, res) => {
       JOIN movies m ON s.movie_id = m.movie_id
       JOIN screens sc ON s.screen_id = sc.screen_id
       JOIN cinemas c ON sc.cinema_id = c.cinema_id
+      LEFT JOIN payments p ON b.booking_id = p.booking_id
       WHERE b.user_id = $1
       ORDER BY b.booking_time DESC
     `;
@@ -206,13 +222,15 @@ app.get('/api/admin/stats', authenticateAdmin, async (req, res) => {
     const moviesRes = await pool.query('SELECT COUNT(*) as total_movies FROM movies');
     const usersRes = await pool.query('SELECT COUNT(*) as total_users FROM users');
     const cityRevRes = await pool.query('SELECT * FROM v_revenue_by_city ORDER BY revenue DESC');
+    const occupancyRes = await pool.query('SELECT * FROM v_show_occupancy WHERE show_time >= NOW() ORDER BY occupancy_percent DESC LIMIT 10');
 
     res.json({
       totalRevenue: revenueRes.rows[0].total_revenue || 0,
       totalBookings: bookingsRes.rows[0].total_bookings,
       totalMovies: moviesRes.rows[0].total_movies,
       totalUsers: usersRes.rows[0].total_users,
-      cityRevenue: cityRevRes.rows
+      cityRevenue: cityRevRes.rows,
+      topOccupancy: occupancyRes.rows
     });
   } catch (err) {
     console.error(err);
@@ -220,15 +238,62 @@ app.get('/api/admin/stats', authenticateAdmin, async (req, res) => {
   }
 });
 
+app.get('/api/admin/reports', authenticateAdmin, async (_req, res) => {
+  try {
+    const [cityRevenue, movieRevenue, cinemaRevenue, showOccupancy, topUsers] = await Promise.all([
+      pool.query('SELECT * FROM v_revenue_by_city ORDER BY revenue DESC'),
+      pool.query('SELECT * FROM v_revenue_by_movie ORDER BY revenue DESC, tickets_sold DESC LIMIT 20'),
+      pool.query('SELECT * FROM v_revenue_by_cinema ORDER BY revenue DESC, tickets_sold DESC LIMIT 20'),
+      pool.query('SELECT * FROM v_show_occupancy WHERE show_time >= NOW() ORDER BY occupancy_percent DESC, show_time ASC LIMIT 20'),
+      pool.query('SELECT * FROM v_top_users ORDER BY total_spent DESC, confirmed_bookings DESC LIMIT 20'),
+    ]);
+
+    res.json({
+      cityRevenue: cityRevenue.rows,
+      movieRevenue: movieRevenue.rows,
+      cinemaRevenue: cinemaRevenue.rows,
+      showOccupancy: showOccupancy.rows,
+      topUsers: topUsers.rows,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch DBMS reports' });
+  }
+});
+
+app.get('/api/admin/audit-logs', authenticateAdmin, async (_req, res) => {
+  try {
+    const { rows } = await query(`
+      SELECT a.*, u.name AS admin_name, u.email AS admin_email
+      FROM admin_audit_logs a
+      LEFT JOIN users u ON a.admin_id = u.user_id
+      ORDER BY a.created_at DESC
+      LIMIT 100
+    `);
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch audit logs' });
+  }
+});
+
 // Add New Movie
 app.post('/api/admin/movies', authenticateAdmin, async (req, res) => {
   const { title, genre, duration_mins, language, poster_url, banner_url, overview } = req.body;
+  if (!title || !title.trim()) {
+    return res.status(400).json({ error: 'Movie title is required' });
+  }
+
   try {
     const result = await query(
       `INSERT INTO movies (title, genre, duration_mins, language, poster_url, banner_url, overview) 
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [title, genre, duration_mins, language, poster_url, banner_url, overview]
+      [title.trim(), genre || null, duration_mins || null, language || null, poster_url || null, banner_url || null, overview || null]
     );
+    await logAdminAction(pool, req.user.user_id, 'CREATE_MOVIE', 'movie', result.rows[0].movie_id, {
+      title: result.rows[0].title,
+      genre: result.rows[0].genre,
+    });
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error(err);
@@ -239,6 +304,12 @@ app.post('/api/admin/movies', authenticateAdmin, async (req, res) => {
 // Add New Show
 app.post('/api/admin/shows', authenticateAdmin, async (req, res) => {
   const { movie_id, screen_id, show_time, base_price } = req.body;
+  const parsedBasePrice = Number(base_price);
+
+  if (!isUuid(movie_id) || !isUuid(screen_id) || !show_time || !Number.isFinite(parsedBasePrice) || parsedBasePrice <= 0) {
+    return res.status(400).json({ error: 'movie_id, screen_id, show_time and a positive base_price are required' });
+  }
+
   try {
     // Basic validation: check if screen is busy at that time
     const check = await query('SELECT * FROM shows WHERE screen_id = $1 AND show_time = $2', [screen_id, show_time]);
@@ -251,8 +322,14 @@ app.post('/api/admin/shows', authenticateAdmin, async (req, res) => {
     const result = await query(
       `INSERT INTO shows (movie_id, screen_id, show_time, base_price, available_seats) 
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [movie_id, screen_id, show_time, base_price, available_seats]
+      [movie_id, screen_id, show_time, parsedBasePrice, available_seats]
     );
+    await logAdminAction(pool, req.user.user_id, 'CREATE_SHOW', 'show', result.rows[0].show_id, {
+      movie_id,
+      screen_id,
+      show_time,
+      base_price: parsedBasePrice,
+    });
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error(err);
@@ -275,6 +352,9 @@ app.patch('/api/admin/shows/:id', authenticateAdmin, async (req, res) => {
       [parsedBasePrice, req.params.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Show not found' });
+    await logAdminAction(pool, req.user.user_id, 'UPDATE_SHOW_PRICE', 'show', result.rows[0].show_id, {
+      base_price: parsedBasePrice,
+    });
     res.json(result.rows[0]);
   } catch (err) {
     console.error(err);
@@ -287,6 +367,7 @@ app.get('/api/admin/bookings', authenticateAdmin, async (req, res) => {
   try {
     const sql = `
       SELECT b.booking_id, b.total_amount, b.status, b.booking_time,
+             p.status as payment_status, p.method as payment_method,
              u.name as user_name, u.email as user_email,
              m.title as movie_title,
              c.name as cinema_name
@@ -296,6 +377,7 @@ app.get('/api/admin/bookings', authenticateAdmin, async (req, res) => {
       JOIN movies m ON s.movie_id = m.movie_id
       JOIN screens sc ON s.screen_id = sc.screen_id
       JOIN cinemas c ON sc.cinema_id = c.cinema_id
+      LEFT JOIN payments p ON b.booking_id = p.booking_id
       ORDER BY b.booking_time DESC
     `;
     const { rows } = await query(sql);
@@ -381,7 +463,7 @@ app.get('/api/screens', async (req, res) => {
 app.get('/api/stream', async (req, res) => {
   try {
     const TMDB_API_KEY = process.env.TMDB_API_KEY;
-    if (!TMDB_API_KEY) return res.status(500).json({ error: 'TMDB API Key missing' });
+    if (!TMDB_API_KEY) return res.json([]);
 
     const response = await fetch(`https://api.themoviedb.org/3/trending/tv/day?api_key=${TMDB_API_KEY}`);
     const data = await response.json();
@@ -459,15 +541,21 @@ app.get('/api/shows/:show_id', async (req, res) => {
 app.get('/api/seats/:show_id', async (req, res) => {
   try {
     const showId = req.params.show_id;
+    await query('SELECT expire_seat_holds()');
     // Get all seats for the screen hosting the show
     const seatsSql = `
       SELECT s.seat_id, s.row_no, s.seat_no, s.seat_type, s.price_multiplier,
-             (CASE WHEN t.ticket_id IS NOT NULL THEN true ELSE false END) as is_booked
+             (CASE WHEN t.ticket_id IS NOT NULL THEN true ELSE false END) as is_booked,
+             (CASE WHEN h.hold_id IS NOT NULL THEN true ELSE false END) as is_held
       FROM seats s
       JOIN shows sh ON s.screen_id = sh.screen_id
       LEFT JOIN tickets t ON t.seat_id = s.seat_id 
            AND t.show_id = $1
            AND t.booking_id IN (SELECT booking_id FROM bookings WHERE status = 'Confirmed')
+      LEFT JOIN seat_holds h ON h.seat_id = s.seat_id
+           AND h.show_id = $1
+           AND h.status = 'Active'
+           AND h.expires_at > NOW()
       WHERE sh.show_id = $1
       ORDER BY s.row_no, s.seat_no
     `;
@@ -534,18 +622,127 @@ app.post('/api/autonomous-booking', async (req, res) => {
 // ---------------------------------------------------------
 // Booking & Transaction Management
 // ---------------------------------------------------------
-// Book tickets
-app.post('/api/bookings', authenticateToken, async (req, res) => {
-  const { show_id, seat_ids, snack_ids, applyPoints } = req.body;
+// Hold seats for a short checkout window.
+app.post('/api/seat-holds', authenticateToken, async (req, res) => {
+  const { show_id, seat_ids } = req.body;
   const user_id = req.user.user_id;
 
-  if (!show_id || !seat_ids || seat_ids.length === 0) {
-    return res.status(400).json({ error: 'Missing required fields' });
+  if (!isUuid(show_id) || !Array.isArray(seat_ids) || seat_ids.length === 0 || seat_ids.some(id => !isUuid(id))) {
+    return res.status(400).json({ error: 'show_id and valid seat_ids are required' });
   }
 
+  const uniqueSeatIds = [...new Set(seat_ids)].sort();
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT expire_seat_holds()');
+
+    const showRes = await client.query('SELECT screen_id FROM shows WHERE show_id = $1 FOR UPDATE', [show_id]);
+    if (showRes.rows.length === 0) throw new Error('Show not found');
+    const show = showRes.rows[0];
+
+    const holds = [];
+    for (const seat_id of uniqueSeatIds) {
+      const seatRes = await client.query('SELECT screen_id FROM seats WHERE seat_id = $1', [seat_id]);
+      if (seatRes.rows.length === 0) throw new Error('Invalid seat');
+      if (seatRes.rows[0].screen_id !== show.screen_id) throw new Error('Seat does not belong to this show');
+
+      const bookedRes = await client.query(`
+        SELECT t.ticket_id
+        FROM tickets t
+        JOIN bookings b ON t.booking_id = b.booking_id
+        WHERE t.show_id = $1 AND t.seat_id = $2 AND b.status = 'Confirmed'
+      `, [show_id, seat_id]);
+      if (bookedRes.rows.length > 0) throw new Error('Seat already booked');
+
+      const activeHoldRes = await client.query(`
+        SELECT hold_id, user_id
+        FROM seat_holds
+        WHERE show_id = $1
+          AND seat_id = $2
+          AND status = 'Active'
+          AND expires_at > NOW()
+        FOR UPDATE
+      `, [show_id, seat_id]);
+
+      if (activeHoldRes.rows.length > 0 && activeHoldRes.rows[0].user_id !== user_id) {
+        throw new Error('Seat is temporarily held by another user');
+      }
+
+      const holdRes = await client.query(`
+        INSERT INTO seat_holds (show_id, seat_id, user_id, expires_at)
+        VALUES ($1, $2, $3, NOW() + ($4 || ' minutes')::INTERVAL)
+        ON CONFLICT (show_id, seat_id) WHERE status = 'Active'
+        DO UPDATE SET
+          user_id = EXCLUDED.user_id,
+          hold_token = gen_random_uuid(),
+          expires_at = EXCLUDED.expires_at,
+          released_at = NULL
+        WHERE seat_holds.user_id = EXCLUDED.user_id
+        RETURNING hold_id, seat_id, hold_token, expires_at
+      `, [show_id, seat_id, user_id, HOLD_MINUTES]);
+
+      if (holdRes.rows.length === 0) throw new Error('Seat is temporarily held by another user');
+      holds.push(holdRes.rows[0]);
+    }
+
+    await client.query('COMMIT');
+    res.json({ success: true, holds, expiresInMinutes: HOLD_MINUTES });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    const status = /booked|held/i.test(err.message) ? 409 : 400;
+    res.status(status).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/api/seat-holds', authenticateToken, async (req, res) => {
+  const { show_id, seat_ids } = req.body;
+  const user_id = req.user.user_id;
+
+  if (!isUuid(show_id) || !Array.isArray(seat_ids) || seat_ids.some(id => !isUuid(id))) {
+    return res.status(400).json({ error: 'show_id and valid seat_ids are required' });
+  }
+
+  try {
+    const result = await query(`
+      UPDATE seat_holds
+      SET status = 'Released', released_at = NOW()
+      WHERE show_id = $1
+        AND user_id = $2
+        AND seat_id = ANY($3)
+        AND status = 'Active'
+      RETURNING hold_id
+    `, [show_id, user_id, seat_ids]);
+    res.json({ success: true, released: result.rowCount });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to release seat holds' });
+  }
+});
+
+// Book tickets
+app.post('/api/bookings', authenticateToken, async (req, res) => {
+  const { show_id, seat_ids, snack_ids, applyPoints, payment_method } = req.body;
+  const user_id = req.user.user_id;
+
+  if (!isUuid(show_id) || !Array.isArray(seat_ids) || seat_ids.length === 0 || seat_ids.some(id => !isUuid(id))) {
+    return res.status(400).json({ error: 'show_id and valid seat_ids are required' });
+  }
+
+  const uniqueSeatIds = [...new Set(seat_ids)].sort();
+  if (uniqueSeatIds.length !== seat_ids.length) {
+    return res.status(400).json({ error: 'Duplicate seats are not allowed' });
+  }
+
+  const paymentMethod = PAYMENT_METHODS.has(payment_method) ? payment_method : 'Demo';
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await client.query('SELECT expire_seat_holds()');
+    await client.query('SELECT expire_pending_bookings()');
 
     // 1. Get show details and lock the row
     const showRes = await client.query(
@@ -563,8 +760,7 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
     let ticketsTotal = 0;
     let finalTickets = [];
 
-    const sortedSeatIds = [...seat_ids].sort();
-    for (let seat_id of sortedSeatIds) {
+    for (let seat_id of uniqueSeatIds) {
       const seatRes = await client.query('SELECT price_multiplier, screen_id FROM seats WHERE seat_id = $1', [seat_id]);
       if (seatRes.rows.length === 0) throw new Error('Invalid seat');
       if (seatRes.rows[0].screen_id !== show.screen_id) throw new Error('Seat does not belong to this show');
@@ -575,6 +771,19 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
          WHERE t.show_id = $1 AND b.status = 'Confirmed' AND t.seat_id = $2
        `, [show_id, seat_id]);
       if (isBooked.rows.length > 0) throw new Error('Seat already booked');
+
+      const activeHoldRes = await client.query(`
+        SELECT hold_id, user_id
+        FROM seat_holds
+        WHERE show_id = $1
+          AND seat_id = $2
+          AND status = 'Active'
+          AND expires_at > NOW()
+        FOR UPDATE
+      `, [show_id, seat_id]);
+      if (activeHoldRes.rows.length > 0 && activeHoldRes.rows[0].user_id !== user_id) {
+        throw new Error('Seat is temporarily held by another user');
+      }
 
       const seatPrice = parseFloat(show.base_price) * parseFloat(seatRes.rows[0].price_multiplier) * surgeMultiplier;
       ticketsTotal += seatPrice;
@@ -655,14 +864,32 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
     // 8. Confirm booking — this fires the DB trigger for seat count & surge pricing & loyalty points
     await client.query('UPDATE bookings SET status = $1 WHERE booking_id = $2', ['Confirmed', bookingId]);
 
+    await client.query(
+      `INSERT INTO payments (booking_id, amount, method, status, paid_at)
+       VALUES ($1, $2, $3, $4, NOW())`,
+      [bookingId, totalAmount, paymentMethod, 'Paid']
+    );
+
+    await client.query(`
+      UPDATE seat_holds
+      SET status = 'Converted', released_at = NOW()
+      WHERE show_id = $1
+        AND user_id = $2
+        AND seat_id = ANY($3)
+        AND status = 'Active'
+    `, [show_id, user_id, uniqueSeatIds]);
+
     await client.query('COMMIT');
-    res.json({ success: true, booking_id: bookingId, totalAmount, message: 'Booking confirmed!' });
+    res.json({ success: true, booking_id: bookingId, totalAmount, paymentStatus: 'Paid', message: 'Booking confirmed!' });
 
   } catch (err) {
     await client.query('ROLLBACK');
     console.error(err);
     if (err.code === '23505') {
       return res.status(409).json({ error: 'One or more selected seats were just booked. Please choose different seats.' });
+    }
+    if (/booked|held|available/i.test(err.message)) {
+      return res.status(409).json({ error: err.message });
     }
     res.status(500).json({ error: 'Booking failed. Please try again.' });
   } finally {
@@ -716,6 +943,21 @@ app.post('/api/bookings/:id/cancel', authenticateToken, async (req, res) => {
 
     // 2. Mark as cancelled
     await client.query('UPDATE bookings SET status = $1 WHERE booking_id = $2', ['Cancelled', id]);
+    await client.query(`
+      UPDATE payments
+      SET status = 'Refunded',
+          refund_amount = amount,
+          refunded_at = NOW()
+      WHERE booking_id = $1
+        AND status = 'Paid'
+    `, [id]);
+    await logAdminAction(client, null, 'CANCEL_BOOKING', 'booking', id, {
+      user_id,
+      show_id: booking.show_id,
+    });
+    await logAdminAction(client, null, 'REFUND_PAYMENT', 'booking', id, {
+      reason: 'User cancellation',
+    });
 
     // Note: The postgres trigger 'update_show_availability_and_surge' fires here 
     // and adds seats back to available_seats!
@@ -745,6 +987,10 @@ app.post('/api/bookings/:id/cancel', authenticateToken, async (req, res) => {
             WHERE screen_id = $1
             AND seat_id NOT IN (
                SELECT t.seat_id FROM tickets t JOIN bookings b ON t.booking_id = b.booking_id WHERE t.show_id = $2 AND b.status = 'Confirmed'
+            )
+            AND seat_id NOT IN (
+               SELECT h.seat_id FROM seat_holds h
+               WHERE h.show_id = $2 AND h.status = 'Active' AND h.expires_at > NOW()
             )
             ORDER BY row_no ASC, seat_no ASC
          `, [show.screen_id, booking.show_id]);
@@ -794,6 +1040,11 @@ app.post('/api/bookings/:id/cancel', authenticateToken, async (req, res) => {
 
             // Confirm booking
             await client.query('UPDATE bookings SET status = $1 WHERE booking_id = $2', ['Confirmed', newBookingId]);
+            await client.query(
+              `INSERT INTO payments (booking_id, amount, method, status)
+               VALUES ($1, $2, $3, $4)`,
+              [newBookingId, totalAmount, 'Demo', 'Pending']
+            );
             // Mark waitlist as Auto-Booked
             await client.query('UPDATE waitlist SET status = $1 WHERE waitlist_id = $2', ['Auto-Booked', wlUser.waitlist_id]);
          }

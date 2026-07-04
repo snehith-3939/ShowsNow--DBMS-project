@@ -19,7 +19,7 @@ const PaymentModal = ({ total, onSuccess, onClose }) => {
     setProcessing(true);
     await new Promise(r => setTimeout(r, 1800)); // simulate gateway
     setProcessing(false);
-    onSuccess();
+    onSuccess(tab);
   };
 
   return (
@@ -147,10 +147,11 @@ const Checkout = () => {
     setShowPayment(true);
   };
 
-  const handlePaymentSuccess = async () => {
+  const handlePaymentSuccess = async (method = 'upi') => {
     setShowPayment(false);
     setBookingError('');
     const snackArray = Object.keys(cartSnacks).map(id => ({ id, quantity: cartSnacks[id] }));
+    const paymentMethod = { upi: 'UPI', card: 'Card', netbanking: 'NetBanking' }[method] || 'Demo';
     try {
       const res = await fetch('http://localhost:5000/api/bookings', {
         method: 'POST',
@@ -159,7 +160,7 @@ const Checkout = () => {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          show_id, seat_ids: selectedSeats.map(s => s.seat_id), snack_ids: snackArray, applyPoints
+          show_id, seat_ids: selectedSeats.map(s => s.seat_id), snack_ids: snackArray, applyPoints, payment_method: paymentMethod
         })
       });
       const result = await res.json();
