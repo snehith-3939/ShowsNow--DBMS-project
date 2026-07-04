@@ -2,6 +2,7 @@ import { useState, useEffect, useContext } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { AppContext } from '../context/AppContext';
+import { CheckCircle2 } from 'lucide-react';
 
 const CONVENIENCE_FEE = 30;
 const TAX_RATE = 0.18;
@@ -177,8 +178,10 @@ const Checkout = () => {
     const qrData = JSON.stringify({ bookingId, seats: selectedSeats.map(s => `${s.row_no}${s.seat_no}`), movie: showInfo?.title, cinema: showInfo?.cinema_name });
     return (
       <div style={{ padding: '3rem', textAlign: 'center', background: 'var(--bms-dark)', minHeight: '100vh', color: 'white' }}>
-        <div style={{ background: 'var(--card-bg)', padding: '2.5rem', borderRadius: '12px', maxWidth: '520px', margin: '0 auto', boxShadow: '0 4px 20px rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)' }}>
-          <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>🎉</div>
+        <div style={{ background: '#1a1c23', padding: '3rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', textAlign: 'center', width: '100%', maxWidth: '500px', margin: '0 auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem' }}>
+            <CheckCircle2 size={64} color="#1ea83c" strokeWidth={1.5} />
+          </div>
           <h2 style={{ color: '#1ea83c', marginBottom: '0.5rem' }}>Booking Confirmed!</h2>
           <p style={{ color: 'var(--bms-muted)', marginBottom: '2rem', fontSize: '0.9rem' }}>Show this QR code at the theatre entrance.</p>
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '2rem' }}>
