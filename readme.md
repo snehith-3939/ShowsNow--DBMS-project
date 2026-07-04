@@ -2,9 +2,9 @@
 
 # ShowsNow 🎬
 
-### A full-stack, production-grade movie ticket booking platform built with React, Node.js, and PostgreSQL.
+### A full-stack DBMS movie ticket booking platform built with React, Node.js, and PostgreSQL.
 
-*Architected to mirror BookMyShow's core booking engine — from tiered surge pricing and real-time seat locking to a loyalty ledger and an AI booking agent.*
+*Built to demonstrate relational modeling, transactions, DB constraints, PL/pgSQL triggers, temporary seat holds, reporting views, and an AI-assisted booking flow.*
 
 </div>
 
@@ -12,9 +12,9 @@
 
 ## What This Project Is
 
-ShowsNow is not a tutorial clone. It is a working, database-driven booking platform built as part of a DBMS course project, designed to demonstrate mastery of relational database engineering, transactional integrity, and modern full-stack development.
+ShowsNow is a working, database-driven booking platform built as part of a DBMS course project, designed to demonstrate relational database engineering, transactional integrity, and modern full-stack development.
 
-The platform supports multi-city movie browsing, interactive seat selection, a full checkout flow with snack bundling and loyalty points redemption, a role-gated admin dashboard, a waitlist system, and an autonomous AI booking agent — all backed by a carefully normalized PostgreSQL schema with triggers, views, and enforced constraints.
+The platform supports multi-city movie browsing, interactive seat selection, checkout with snack bundling and loyalty point redemption, payment records, a role-gated admin dashboard, a waitlist system, and an AI-assisted booking agent. The backend uses PostgreSQL constraints, transactions, triggers, views, and row locks for the core booking flow.
 
 ---
 
@@ -103,7 +103,7 @@ Fires when a booking transitions to `Confirmed` or `Cancelled`. It:
 | 5–20% empty | 1.25× |
 | < 5% empty | 1.50× |
 
-This means a nearly sold-out show automatically charges higher prices — entirely at the database level, with zero application code involved.
+This means a nearly sold-out show automatically charges higher prices after each confirmed/cancelled booking status change.
 
 ### 2. `grant_loyalty_points`
 
@@ -121,21 +121,23 @@ Fires when a booking is confirmed. Inserts a new row into the `loyalty_ledger` g
 - Animated hero carousel auto-rotates through featured movies with genre pills, ratings, runtime, and a trailer launcher.
 
 ### Show Scheduling
-- Shows are scheduled to run for the next 5 days across all cinemas and cities.
+- Shows are scheduled to run for the next 7 days across all cinemas and cities.
 - Standard slot times (10:30 AM, 1:30 PM, 4:30 PM, 7:30 PM) displayed in IST.
 - Show timings page lets users browse by date and filter by cinema chain.
 
 ### Seat Selection
 - Visual, interactive seat grid rendered dynamically from the database.
-- Seats are color-coded by type: Standard (grey), Premium (blue), VIP (gold).
-- Already-booked seats are locked and non-selectable.
+- Seats are color-coded by type: Regular (green), Premium (blue), VIP (purple).
+- Already-booked seats and active holds are non-selectable.
+- Logged-in users create a temporary seat hold before checkout; expired holds are cleared when seat/booking APIs run.
 - Computed final price per seat factors in: `base_price × surge_multiplier × seat.price_multiplier`.
 
 ### Checkout Flow
 1. Review selected seats and their computed prices.
 2. Add snacks from the food and beverage menu (stored in `booking_snacks`).
-3. Apply loyalty points as a discount (1 point = ₹0.25 off).
-4. Confirm booking — the backend wraps the entire operation in a PostgreSQL transaction: `INSERT tickets` → `UPDATE booking status` → trigger fires for seat count and loyalty points.
+3. Apply loyalty points as a discount (1 point = ₹0.10 off, capped at ₹100).
+4. Confirm booking — the backend wraps the operation in a PostgreSQL transaction: lock the show row, validate seats/holds, insert booking and tickets, confirm booking, record payment, convert holds.
+5. The `UNIQUE(show_id, seat_id)` constraint on `tickets` is the final database-level double-booking protection.
 
 ### Loyalty Points System
 - Users earn **50 points per ticket** on every confirmed booking.
@@ -146,16 +148,18 @@ Fires when a booking is confirmed. Inserts a new row into the `loyalty_ledger` g
 - If a show is sold out, users can join the waitlist specifying how many seats they need.
 - Waitlist entries have statuses: `Waiting`, `Notified`, `Auto-Booked`, `Expired`.
 
-### AI Autonomous Booking Agent
-An NLP-powered floating widget that lets users book tickets with a single natural language command.
+### AI-Assisted Booking Agent
+An authenticated floating widget that helps users find a show and pre-fill checkout from a natural language command.
 
 **Example:** *"Book 2 IMAX tickets for Dune in Mumbai tomorrow evening with popcorn"*
 
-The agent runs a multi-step pipeline on the backend:
+The agent runs a multi-step backend pipeline:
 1. Extracts quantity, city, genre, movie title, time-of-day, and snack preferences from the message.
 2. Queries the database for the best matching upcoming show.
 3. Auto-selects the optimal available seats (VIP → Premium → Standard priority).
-4. Returns a fully pre-filled checkout payload, dropping the user directly at payment confirmation.
+4. Returns a pre-filled checkout payload. The user still completes the normal checkout/payment flow.
+
+If `GEMINI_API_KEY` is configured, Gemini is used for intent extraction. Without that key, the agent still supports clarification flow and database-backed search, but natural-language extraction is limited.
 
 ### Admin Dashboard
 Role-gated behind `role = 'admin'` in the JWT payload.
@@ -164,7 +168,19 @@ Role-gated behind `role = 'admin'` in the JWT payload.
 - **Movie Management** — Add new movies to the catalog with poster URL, genre, runtime, and language.
 - **Show Scheduling** — Create new scheduled shows by selecting a movie, cinema, screen, date, time, and base price.
 - **Booking Overview** — Browse and manage all bookings across all users.
-- **User Management** — View registered users.
+- **DBMS Reports API** — Backend exposes revenue/occupancy/top-user reports, though the current frontend dashboard only renders city revenue and booking inventory.
+
+---
+
+## Verified DBMS Notes
+
+- Booking uses PostgreSQL's default `READ COMMITTED` isolation level; no explicit `SET TRANSACTION ISOLATION LEVEL` is configured.
+- The booking route locks the `shows` row with `FOR UPDATE`, checks tickets and active holds inside the transaction, then inserts tickets.
+- Temporary holds are protected by a partial unique index on active `(show_id, seat_id)` rows.
+- Confirmed double-booking is ultimately prevented by the `UNIQUE(show_id, seat_id)` constraint in `tickets`.
+- Expired holds are cleaned opportunistically by API calls through `expire_seat_holds()`, not by a cron job.
+- Waitlist promotion during cancellation uses `FOR UPDATE SKIP LOCKED` for waiting rows.
+- Payment is a demo/local record in the `payments` table, not a real payment gateway integration.
 
 ---
 
@@ -185,7 +201,7 @@ Initialize the schema, triggers, and base data:
 ```bash
 cd backend
 node resetDb.js   # Runs schema.sql, functions.sql, and seed.sql in sequence
-node seedData.js  # Seeds 15 movies, cinemas, screens, seats, and 5 days of shows
+node seedData.js  # Seeds 15 movies, cinemas, screens, seats, and 7 days of shows
 ```
 
 ### 2. Backend
@@ -243,7 +259,7 @@ ShowsNow--DBMS-project/
 │
 ├── backend/
 │   ├── db.js              # pg-pool connection with env-based config
-│   ├── index.js           # All Express API routes and AI agent logic (~870 lines)
+│   ├── index.js           # Express API routes, booking transactions, admin reports, AI-assisted flow
 │   ├── seedData.js        # Programmatic seeder: 15 movies, cinemas, shows
 │   ├── resetDb.js         # Drops and recreates all tables from SQL files
 │   └── package.json
@@ -270,6 +286,7 @@ ShowsNow--DBMS-project/
 │
 └── database/
     ├── schema.sql          # All CREATE TABLE, INDEX, and VIEW definitions
-    ├── functions.sql       # PL/pgSQL triggers: surge pricing + loyalty ledger
+    ├── functions.sql       # PL/pgSQL triggers and expiry helpers
+    ├── dbms_checks.sql     # Verification queries for DBMS demo/viva
     └── seed.sql            # Base cinemas, screens, seats, and snacks data
 ```
