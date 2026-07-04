@@ -103,7 +103,10 @@ const Navbar = () => {
 
           {user ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-              <span style={{ color: 'white', fontSize: '0.9rem', fontWeight: '600' }}>
+              <span 
+                onClick={() => navigate('/profile')}
+                style={{ color: 'white', fontSize: '0.9rem', fontWeight: '600', cursor: 'pointer' }}
+              >
                 Hi, {user.name.split(' ')[0]}
               </span>
               {user.role === 'admin' && (
@@ -299,7 +302,7 @@ const Navbar = () => {
                       </span>
                     )}
                   </div>
-                  <div className="drawer-item" onClick={() => { navigate('/bookings'); setShowDrawer(false); }}>🎟️ Your Orders</div>
+                  <div className="drawer-item" onClick={() => { navigate('/profile'); setShowDrawer(false); }}>👤 My Profile & Bookings</div>
                   <div className="drawer-item" onClick={() => { navigate('/waitlist'); setShowDrawer(false); }}>🕒 Your Waitlists</div>
                   {user.role === 'admin' && (
                     <div 
@@ -310,8 +313,6 @@ const Navbar = () => {
                       🛡️ Admin Dashboard
                     </div>
                   )}
-                  <div className="drawer-item">💳 Stream Library</div>
-                  <div className="drawer-item">⚙️ Account Settings</div>
                   <div className="drawer-item" onClick={() => { logout(); setShowDrawer(false); }} style={{ color: 'var(--bms-red)' }}>🚪 Sign Out</div>
                 </>
               ) : (

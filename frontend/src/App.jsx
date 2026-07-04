@@ -10,6 +10,7 @@ import Stream from './pages/Stream';
 import AdminDashboard from './pages/AdminDashboard';
 import MyBookings from './pages/MyBookings';
 import Waitlist from './pages/Waitlist';
+import Profile from './pages/Profile';
 import AutonomousBot from './components/AutonomousBot';
 import Footer from './components/Footer';
 import { AppProvider } from './context/AppContext';
@@ -30,6 +31,7 @@ function App() {
           <Route path="/stream" element={<Stream />} />
           <Route path="/category/:name" element={<Category />} />
           <Route path="/admin" element={<AdminDashboard />} />
+          <Route path="/profile" element={<Profile />} />
           <Route path="/bookings" element={<MyBookings />} />
           <Route path="/waitlist" element={<Waitlist />} />
         </Routes>
