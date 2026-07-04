@@ -114,10 +114,10 @@ Fires when a booking is confirmed. Inserts a new row into the `loyalty_ledger` g
 ## Features
 
 ### Movie Discovery
-- 15 blockbuster movies with full poster and banner images sourced from the TMDB Global Image CDN.
+- 30 blockbuster movies with full poster and banner images sourced from the TMDB Global Image CDN.
 - Filter movies by genre (Action, Animation, Drama, Horror, Sci-Fi, Musical).
 - Search movies by title from the navigation bar.
-- Switch between 5 cities (Mumbai, Delhi, Hyderabad, Bangalore, Chennai) to see locally scheduled shows.
+- Switch between 8 cities (Mumbai, Delhi, Bengaluru, Hyderabad, Chennai, Pune, Kolkata, Ahmedabad) to see locally scheduled shows.
 - Animated hero carousel auto-rotates through featured movies with genre pills, ratings, runtime, and a trailer launcher.
 
 ### Show Scheduling
@@ -139,10 +139,12 @@ Fires when a booking is confirmed. Inserts a new row into the `loyalty_ledger` g
 4. Confirm booking — the backend wraps the operation in a PostgreSQL transaction: lock the show row, validate seats/holds, insert booking and tickets, confirm booking, record payment, convert holds.
 5. The `UNIQUE(show_id, seat_id)` constraint on `tickets` is the final database-level double-booking protection.
 
-### Loyalty Points System
+### Loyalty Points & Rewards System
 - Users earn **50 points per ticket** on every confirmed booking.
 - Points expire after **60 days** and are tracked in an immutable `loyalty_ledger`.
-- Loyalty balance is shown at checkout and can be redeemed for a discount.
+- Loyalty balance is shown live in the Navigation Bar and at checkout.
+- **Tier System**: Bronze (0-499), Silver (500-999), Gold (1000-1999), and Platinum (2000+) tiers unlock multipliers and perks.
+- Points can be redeemed for a discount at checkout (1 point = ₹0.10 off, capped at ₹100).
 
 ### Waitlist
 - If a show is sold out, users can join the waitlist specifying how many seats they need.
@@ -159,7 +161,7 @@ The agent runs a multi-step backend pipeline:
 3. Auto-selects the optimal available seats (VIP → Premium → Standard priority).
 4. Returns a pre-filled checkout payload. The user still completes the normal checkout/payment flow.
 
-If `GEMINI_API_KEY` is configured, Gemini is used for intent extraction. Without that key, the agent still supports clarification flow and database-backed search, but natural-language extraction is limited.
+**Local NLP Fallback Engine**: If a `GEMINI_API_KEY` is not provided, the backend falls back to a custom, robust RegEx-based Natural Language parser that can independently identify movie titles from the database, quantities, top Indian cities, showtimes (e.g., "tonight", "8 pm"), and snacks directly from free-form text.
 
 ### Admin Dashboard
 Role-gated behind `role = 'admin'` in the JWT payload.
@@ -278,8 +280,9 @@ ShowsNow--DBMS-project/
 │           ├── ShowTimings.jsx     # Date picker, cinema filter, show slots
 │           ├── SeatLayout.jsx      # Interactive seat grid with live pricing
 │           ├── Checkout.jsx        # Cart, snack add-ons, loyalty redemption
+│           ├── Profile.jsx         # User details, interactive booking history, digital QR tickets
 │           ├── MyBookings.jsx      # User's booking history
-│           ├── Waitlist.jsx        # Waitlist join and status view
+│           ├── Waitlist.jsx        # Waitlist join and status view (Dark Theme)
 │           ├── AdminDashboard.jsx  # Revenue, movies, shows, user management
 │           ├── Category.jsx        # Events and Plays browsing
 │           └── Stream.jsx          # Streaming content section
