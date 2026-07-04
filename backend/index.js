@@ -1165,6 +1165,50 @@ Return ONLY valid JSON with these EXACT fields:
           intent = { ...intent, ...JSON.parse(result.response.text()) };
         } catch (e) { console.warn(e.message); }
       }
+
+      // Local NLP Fallback (If LLM is unavailable or API key missing)
+      if (Object.keys(intent).length === 0 || (!intent.movie_title && !intent.city && !intent.time_of_day)) {
+        const lowerPrompt = prompt.toLowerCase();
+        
+        // 1. Extract Quantity
+        const numMatch = lowerPrompt.match(/(\d+)\s*ticket/i) || lowerPrompt.match(/(?:for\s+)?(\d+)\s*(?:people|person|of us)/i);
+        if (numMatch) intent.quantity = parseInt(numMatch[1]);
+        else if (lowerPrompt.includes('one') || lowerPrompt.includes('alone') || lowerPrompt.match(/\bme\b/) || lowerPrompt.includes('myself')) intent.quantity = 1;
+        else if (lowerPrompt.includes('two')) intent.quantity = 2;
+        else if (lowerPrompt.includes('three')) intent.quantity = 3;
+        else if (lowerPrompt.includes('four')) intent.quantity = 4;
+        
+        // 2. Extract City
+        const cities = ['mumbai', 'delhi', 'bengaluru', 'hyderabad', 'chennai', 'pune', 'kolkata', 'ahmedabad'];
+        for (const c of cities) {
+           if (lowerPrompt.includes(c)) { intent.city = c.charAt(0).toUpperCase() + c.slice(1); break; }
+        }
+
+        // 3. Extract Time
+        const timeMatch = lowerPrompt.match(/(\d+)(?::\d+)?\s*(am|pm)/i);
+        if (timeMatch) intent.time_of_day = timeMatch[0];
+        else if (lowerPrompt.includes('tonight')) intent.time_of_day = 'tonight';
+        else if (lowerPrompt.includes('morning')) intent.time_of_day = 'morning';
+        else if (lowerPrompt.includes('evening')) intent.time_of_day = 'evening';
+        else if (lowerPrompt.includes('night')) intent.time_of_day = 'night';
+        else if (lowerPrompt.includes('afternoon')) intent.time_of_day = 'afternoon';
+
+        // 4. Extract Snacks
+        const snacks = ['popcorn', 'coke', 'pepsi', 'nachos', 'water', 'coffee', 'fries', 'burger', 'tea'];
+        for (const s of snacks) {
+           if (lowerPrompt.includes(s)) { intent.snack = s; break; }
+        }
+
+        // 5. Extract Movie Title (Query DB)
+        const { query } = require('./db');
+        const moviesRes = await query('SELECT title FROM movies');
+        for (const m of moviesRes.rows) {
+           if (lowerPrompt.includes(m.title.toLowerCase())) {
+             intent.movie_title = m.title;
+             break;
+           }
+        }
+      }
       
       intent.quantity = Math.min(Math.max(parseInt(intent.quantity) || 2, 1), 10);
     } else if (prompt && context?.clarification_field) {
