@@ -969,6 +969,8 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    const redeemableAtRes = await client.query('SELECT transaction_timestamp() AS redeemable_at');
+    const redeemableAt = redeemableAtRes.rows[0].redeemable_at;
     await client.query('SELECT expire_seat_holds()');
     await client.query('SELECT expire_pending_bookings()');
 
@@ -1036,8 +1038,6 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
     // 5. Apply Loyalty Points
     let pointsToSpend = 0;
     if (applyPoints) {
-      const redeemableAtRes = await client.query('SELECT clock_timestamp() AS redeemable_at');
-      const redeemableAt = redeemableAtRes.rows[0].redeemable_at;
       await lockUserLoyaltyLedger(client, user_id);
       const balance = await getLoyaltyBalance(client, user_id, redeemableAt);
       if (balance <= 0) {
