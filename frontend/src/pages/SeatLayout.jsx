@@ -20,12 +20,13 @@ const SeatLayout = () => {
   const [selectedSeats, setSelectedSeats] = useState([]);
 
   useEffect(() => {
-    fetch(`http://localhost:5000/api/seats/${id}`)
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+    fetch(`http://localhost:5000/api/seats/${id}`, { headers })
       .then(r => r.json())
       .then(data => {
         setSeats(data);
         if (preSelectedSeatIds?.length > 0) {
-          const preSelected = data.filter(s => preSelectedSeatIds.includes(s.seat_id) && !s.is_booked && !s.is_held);
+          const preSelected = data.filter(s => preSelectedSeatIds.includes(s.seat_id) && !s.is_booked && (!s.is_held || s.is_held_by_me));
           setSelectedSeats(preSelected);
         }
       });
@@ -33,7 +34,7 @@ const SeatLayout = () => {
   }, [id, preSelectedSeatIds]);
 
   const toggleSeat = (seat) => {
-    if (seat.is_booked || seat.is_held) return;
+    if (seat.is_booked || (seat.is_held && !seat.is_held_by_me)) return;
     if (selectedSeats.find(s => s.seat_id === seat.seat_id)) {
       setSelectedSeats(selectedSeats.filter(s => s.seat_id !== seat.seat_id));
     } else {
@@ -87,7 +88,7 @@ const SeatLayout = () => {
 
   const renderSeat = (seat) => {
     const isSelected = selectedSeats.some(s => s.seat_id === seat.seat_id);
-    const isUnavailable = seat.is_booked || seat.is_held;
+    const isUnavailable = seat.is_booked || (seat.is_held && !seat.is_held_by_me);
     const color = TIER_COLORS[seat.seat_type] || '#1ea83c';
     return (
       <div key={seat.seat_id} onClick={() => toggleSeat(seat)}
@@ -125,7 +126,7 @@ const SeatLayout = () => {
         </div>
       )}
 
-      <div style={{ flex: 1, padding: '2rem 1rem', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: selectedSeats.length > 0 ? '100px' : '2rem' }}>
+      <div style={{ flex: 1, padding: '2rem 1rem', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: selectedSeats.length > 0 ? '100px' : '2rem', overflowX: 'auto', maxWidth: '100vw' }}>
         <div style={{ width: '50%', height: '8px', background: 'linear-gradient(to bottom, #d9d9d9, transparent)', borderTopLeftRadius: '50%', borderTopRightRadius: '50%', marginBottom: '0.4rem' }} />
         <div style={{ color: '#aaa', fontSize: '0.7rem', letterSpacing: '4px', marginBottom: '2.5rem' }}>ALL EYES THIS WAY PLEASE!</div>
 

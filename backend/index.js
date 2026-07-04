@@ -564,12 +564,25 @@ app.get('/api/shows/:show_id', async (req, res) => {
 app.get('/api/seats/:show_id', async (req, res) => {
   try {
     const showId = req.params.show_id;
+    let userId = null;
+    const authHeader = req.headers['authorization'];
+    if (authHeader) {
+      const token = authHeader.split(' ')[1];
+      if (token) {
+        try {
+          const user = jwt.verify(token, JWT_SECRET);
+          userId = user.user_id;
+        } catch (e) {} // ignore invalid token for optional auth
+      }
+    }
+
     await query('SELECT expire_seat_holds()');
     // Get all seats for the screen hosting the show
     const seatsSql = `
       SELECT s.seat_id, s.row_no, s.seat_no, s.seat_type, s.price_multiplier,
              (CASE WHEN t.ticket_id IS NOT NULL THEN true ELSE false END) as is_booked,
-             (CASE WHEN h.hold_id IS NOT NULL THEN true ELSE false END) as is_held
+             (CASE WHEN h.hold_id IS NOT NULL THEN true ELSE false END) as is_held,
+             (CASE WHEN h.user_id = $2 THEN true ELSE false END) as is_held_by_me
       FROM seats s
       JOIN shows sh ON s.screen_id = sh.screen_id
       LEFT JOIN tickets t ON t.seat_id = s.seat_id 
@@ -582,7 +595,7 @@ app.get('/api/seats/:show_id', async (req, res) => {
       WHERE sh.show_id = $1
       ORDER BY s.row_no, s.seat_no
     `;
-    const { rows } = await query(seatsSql, [showId]);
+    const { rows } = await query(seatsSql, [showId, userId]);
     res.json(rows);
   } catch (err) {
     console.error(err);
@@ -922,6 +935,28 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
 
 // ---------------------------------------------------------
 // Waitlist Management
+app.get('/api/user/waitlist', authenticateToken, async (req, res) => {
+  try {
+    const { rows } = await query(`
+      SELECT w.waitlist_id, w.status, w.joined_at, w.requested_seats,
+             s.show_id, s.show_time,
+             m.title as movie_title,
+             c.city, c.name as cinema_name
+      FROM waitlist w
+      JOIN shows s ON w.show_id = s.show_id
+      JOIN movies m ON s.movie_id = m.movie_id
+      JOIN screens sc ON s.screen_id = sc.screen_id
+      JOIN cinemas c ON sc.cinema_id = c.cinema_id
+      WHERE w.user_id = $1
+      ORDER BY w.joined_at DESC
+    `, [req.user.user_id]);
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch waitlist' });
+  }
+});
+
 // ---------------------------------------------------------
 app.post('/api/waitlist', authenticateToken, async (req, res) => {
   const { show_id, requested_seats } = req.body;
@@ -1096,7 +1131,7 @@ app.post('/api/autonomous-agent', authenticateToken, async (req, res) => {
 Return ONLY valid JSON with these EXACT fields:
 - "movie_title": string or null
 - "city": string or null
-- "quantity": number (default 2)
+- "quantity": number (default 2, but if user says "me", "myself", "alone", or "one", set to 1)
 - "snack": string or null
 - "genre": string or null
 - "time_of_day": string or null`;

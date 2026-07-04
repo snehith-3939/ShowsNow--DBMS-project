@@ -3,13 +3,14 @@ import { AppContext } from '../context/AppContext';
 import { useNavigate } from 'react-router-dom';
 
 const Waitlist = () => {
-  const { user, token } = useContext(AppContext);
+  const { user, token, authLoading } = useContext(AppContext);
   const [waitlist, setWaitlist] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
+    if (authLoading) return;
     if (!user) {
       navigate('/');
       return;
@@ -31,7 +32,7 @@ const Waitlist = () => {
     };
 
     fetchWaitlist();
-  }, [user, token, navigate]);
+  }, [user, token, authLoading, navigate]);
 
   if (loading) return <div style={{ padding: '4rem', textAlign: 'center' }}>Loading your waitlist...</div>;
   if (error) return <div style={{ padding: '4rem', textAlign: 'center', color: 'red' }}>Error: {error}</div>;

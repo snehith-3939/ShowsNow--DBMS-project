@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { AppContext } from '../context/AppContext';
 
 const AutonomousBot = () => {
-  const { token } = useContext(AppContext);
+  const { token, selectedCity } = useContext(AppContext);
   const [showAiPanel, setShowAiPanel] = useState(false);
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
@@ -26,6 +26,8 @@ const AutonomousBot = () => {
     setMessages(prev => [...prev, { sender: 'user', text: userText }]);
     setPrompt('');
 
+    const mergedContext = currentContext || { city: selectedCity };
+
     try {
       const res = await fetch('http://localhost:5000/api/autonomous-agent', {
         method: 'POST',
@@ -33,7 +35,7 @@ const AutonomousBot = () => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ prompt: userText, context: currentContext })
+        body: JSON.stringify({ prompt: userText, context: mergedContext })
       });
       const data = await res.json();
       

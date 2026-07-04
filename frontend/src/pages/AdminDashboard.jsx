@@ -39,19 +39,19 @@ const AdminDashboard = () => {
         fetch('http://localhost:5000/api/admin/waitlists', { headers })
       ]);
 
-      const statsData = await statsRes.json();
-      const bookingsData = await bookingsRes.json();
-      const moviesData = await moviesRes.json();
-      const cinemasData = await cinemasRes.json();
-      const screensData = await screensRes.json();
-      const waitlistsData = await waitlistsRes.json();
+      const statsData = statsRes.ok ? await statsRes.json() : null;
+      const bookingsData = bookingsRes.ok ? await bookingsRes.json() : [];
+      const moviesData = moviesRes.ok ? await moviesRes.json() : [];
+      const cinemasData = cinemasRes.ok ? await cinemasRes.json() : [];
+      const screensData = screensRes.ok ? await screensRes.json() : [];
+      const waitlistsData = waitlistsRes.ok ? await waitlistsRes.json() : [];
 
-      setStats(statsData);
-      setBookings(bookingsData);
-      setMovies(moviesData);
-      setCinemas(cinemasData);
-      setScreens(screensData);
-      setWaitlists(waitlistsData);
+      if (statsData) setStats(statsData);
+      setBookings(Array.isArray(bookingsData) ? bookingsData : []);
+      setMovies(Array.isArray(moviesData) ? moviesData : []);
+      setCinemas(Array.isArray(cinemasData) ? cinemasData : []);
+      setScreens(Array.isArray(screensData) ? screensData : []);
+      setWaitlists(Array.isArray(waitlistsData) ? waitlistsData : []);
       setLoading(false);
     } catch (error) {
       console.error('Failed to fetch admin data:', error);
@@ -176,7 +176,7 @@ const AdminDashboard = () => {
           {activeTab === 'overview' && stats && (
             <div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem', marginBottom: '3rem' }}>
-                <StatCard title="Total Revenue" value={`₹${parseFloat(stats.totalRevenue).toLocaleString()}`} color="#22c55e" />
+                <StatCard title="Total Revenue" value={`₹${(parseFloat(stats.totalRevenue) || 0).toLocaleString()}`} color="#22c55e" />
                 <StatCard title="Total Bookings" value={stats.totalBookings} color="#3b82f6" />
                 <StatCard title="Live Movies" value={stats.totalMovies} color="#a855f7" />
                 <StatCard title="Total Users" value={stats.totalUsers} color="var(--bms-red)" />
