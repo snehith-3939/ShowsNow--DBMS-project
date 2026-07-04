@@ -19,6 +19,7 @@ if (!JWT_SECRET) {
 }
 
 const configuredOrigins = [
+  'https://showsnow-chi.vercel.app',
   process.env.FRONTEND_URL,
   process.env.VERCEL_URL && `https://${process.env.VERCEL_URL}`,
   ...(process.env.CORS_ORIGINS || '').split(','),
@@ -31,7 +32,7 @@ app.use(cors({
     if (!origin || allowedOrigins.has(origin.replace(/\/$/, ''))) {
       return callback(null, true);
     }
-    return callback(new Error('Not allowed by CORS'));
+    return callback(null, false);
   },
 }));
 app.use(express.json());
