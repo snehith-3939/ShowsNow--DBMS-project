@@ -13,6 +13,10 @@ const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? null : 'fallback_secret_change_me');
 const HOLD_MINUTES = 10;
 const PAYMENT_METHODS = new Set(['Demo', 'UPI', 'Card', 'NetBanking', 'Wallet', 'Cash']);
+const LOYALTY_REWARD_SETTLEMENT_SECONDS = Math.max(
+  0,
+  parseInt(process.env.LOYALTY_REWARD_SETTLEMENT_SECONDS || '30', 10) || 30
+);
 
 if (!JWT_SECRET) {
   throw new Error('JWT_SECRET must be set in production');
@@ -65,6 +69,14 @@ const loyaltyBalanceSql = `
 
 async function lockUserLoyaltyLedger(db, userId) {
   await db.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`loyalty:${userId}`]);
+}
+
+async function getLoyaltyRedeemableAt(db) {
+  const result = await db.query(
+    "SELECT transaction_timestamp() - ($1::int * INTERVAL '1 second') AS redeemable_at",
+    [LOYALTY_REWARD_SETTLEMENT_SECONDS]
+  );
+  return result.rows[0].redeemable_at;
 }
 
 async function getLoyaltyBalance(db, userId, earnedBefore = null) {
@@ -396,7 +408,9 @@ app.get('/api/user/bookings', authenticateToken, async (req, res) => {
 // GET /api/user/loyalty — user's loyalty point balance
 app.get('/api/user/loyalty', authenticateToken, async (req, res) => {
   try {
-    const balance = await getLoyaltyBalance({ query }, req.user.user_id);
+    const db = { query };
+    const redeemableAt = await getLoyaltyRedeemableAt(db);
+    const balance = await getLoyaltyBalance(db, req.user.user_id, redeemableAt);
     res.json({ balance });
   } catch (err) {
     console.error(err);
@@ -969,8 +983,7 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const redeemableAtRes = await client.query('SELECT transaction_timestamp() AS redeemable_at');
-    const redeemableAt = redeemableAtRes.rows[0].redeemable_at;
+    const redeemableAt = await getLoyaltyRedeemableAt(client);
     await client.query('SELECT expire_seat_holds()');
     await client.query('SELECT expire_pending_bookings()');
 
