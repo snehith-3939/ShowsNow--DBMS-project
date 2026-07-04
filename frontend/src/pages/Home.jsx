@@ -3,11 +3,18 @@ import { useNavigate } from 'react-router-dom';
 import { AppContext } from '../context/AppContext';
 
 const GENRES = ['All', 'Action', 'Animation', 'Drama', 'Horror', 'Science Fiction', 'Musical', 'Thriller'];
+const LANGUAGES = ['All', 'English', 'Hindi', 'Tamil', 'Telugu', 'Malayalam', 'Kannada'];
+
+const getFullLanguage = (lang) => {
+  const map = { 'EN': 'English', 'HI': 'Hindi', 'TA': 'Tamil', 'TE': 'Telugu', 'ML': 'Malayalam', 'KN': 'Kannada' };
+  return map[lang] || lang;
+};
 
 const Home = () => {
   const [movies, setMovies] = useState([]);
   const [carouselIdx, setCarouselIdx] = useState(0);
   const [activeGenre, setActiveGenre] = useState('All');
+  const [activeLang, setActiveLang] = useState('All');
   const [trailerKey, setTrailerKey] = useState(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -42,10 +49,12 @@ const Home = () => {
   };
 
   const filteredMovies = movies.filter(m => {
-    const matchSearch = m.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (m.genre || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const q = (searchQuery || '').toLowerCase();
+    const matchSearch = (m.title || '').toLowerCase().includes(q) ||
+      (m.genre || '').toLowerCase().includes(q);
     const matchGenre = activeGenre === 'All' || (m.genre || '').includes(activeGenre);
-    return matchSearch && matchGenre;
+    const matchLang = activeLang === 'All' || getFullLanguage(m.language) === activeLang;
+    return matchSearch && matchGenre && matchLang;
   });
 
   const nowShowing = filteredMovies.filter(m => !m.release_date || new Date(m.release_date) <= new Date());
@@ -111,7 +120,7 @@ const Home = () => {
               </div>
               <h2 style={{ fontSize: '2.6rem', fontWeight: '900', marginBottom: '0.4rem', textShadow: '0 2px 8px rgba(0,0,0,0.6)', lineHeight: 1.1 }}>{movie.title}</h2>
               <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.9rem', marginBottom: '0.5rem' }}>
-                ⏱ {movie.duration_mins} min &nbsp;•&nbsp; 🌐 {movie.language} &nbsp;•&nbsp; ⭐ {parseFloat(movie.vote_average || 0).toFixed(1)}/10
+                ⏱ {movie.duration_mins} min &nbsp;•&nbsp; 🌐 {getFullLanguage(movie.language)} &nbsp;•&nbsp; ⭐ {parseFloat(movie.vote_average || 0).toFixed(1)}/10
               </div>
               <p style={{ color: 'rgba(255,255,255,0.65)', fontSize: '0.85rem', marginBottom: '1.2rem', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                 {movie.overview}
@@ -122,7 +131,7 @@ const Home = () => {
                   onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
                   onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
                 >
-                  🎟 Book Tickets
+                  Book Tickets
                 </button>
                 {movie.trailer_key && (
                   <button onClick={() => setTrailerKey(movie.trailer_key)}
@@ -158,21 +167,40 @@ const Home = () => {
           </h2>
         </div>
 
-        {/* Genre Filter Tabs */}
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.8rem' }}>
-          {GENRES.map(g => (
-            <button key={g} onClick={() => setActiveGenre(g)}
-              style={{
-                padding: '6px 18px', borderRadius: '20px', border: activeGenre === g ? 'none' : '1.5px solid #ddd',
-                background: activeGenre === g ? 'var(--bms-red)' : 'white',
-                color: activeGenre === g ? 'white' : '#555',
-                fontWeight: activeGenre === g ? '700' : '400',
-                cursor: 'pointer', fontSize: '0.82rem', transition: 'all 0.2s',
-                boxShadow: activeGenre === g ? '0 3px 10px rgba(248,68,100,0.3)' : 'none'
-              }}>
-              {g}
-            </button>
-          ))}
+        {/* Filters */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.8rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <span style={{ color: '#888', fontSize: '0.85rem', fontWeight: '500', marginRight: '8px', alignSelf: 'center' }}>Genres:</span>
+            {GENRES.map(g => (
+              <button key={g} onClick={() => setActiveGenre(g)}
+                style={{
+                  padding: '6px 18px', borderRadius: '20px', border: activeGenre === g ? 'none' : '1.5px solid #ddd',
+                  background: activeGenre === g ? 'var(--bms-red)' : 'white',
+                  color: activeGenre === g ? '#0A0A0A' : '#555',
+                  fontWeight: activeGenre === g ? '700' : '500',
+                  cursor: 'pointer', fontSize: '0.82rem', transition: 'all 0.2s',
+                  boxShadow: activeGenre === g ? '0 3px 10px rgba(200, 169, 110, 0.3)' : 'none'
+                }}>
+                {g}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <span style={{ color: '#888', fontSize: '0.85rem', fontWeight: '500', marginRight: '8px', alignSelf: 'center' }}>Languages:</span>
+            {LANGUAGES.map(l => (
+              <button key={l} onClick={() => setActiveLang(l)}
+                style={{
+                  padding: '6px 18px', borderRadius: '20px', border: activeLang === l ? 'none' : '1.5px solid #ddd',
+                  background: activeLang === l ? '#3b82f6' : 'white',
+                  color: activeLang === l ? 'white' : '#555',
+                  fontWeight: activeLang === l ? '700' : '500',
+                  cursor: 'pointer', fontSize: '0.82rem', transition: 'all 0.2s',
+                  boxShadow: activeLang === l ? '0 3px 10px rgba(59, 130, 246, 0.3)' : 'none'
+                }}>
+                {l}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Movie Grid */}
@@ -200,10 +228,10 @@ const Home = () => {
                   ⭐ {parseFloat(movie.vote_average || 0).toFixed(1)}
                 </div>
                 {/* Book Now overlay on hover */}
-                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(to top, rgba(248,68,100,0.95), transparent)', padding: '2rem 1rem 1rem', transform: 'translateY(100%)', transition: 'transform 0.25s ease', pointerEvents: 'none' }}
+                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(to top, rgba(20,20,20,0.95), transparent)', padding: '2rem 1rem 1rem', transform: 'translateY(100%)', transition: 'transform 0.25s ease', pointerEvents: 'none' }}
                   className="book-overlay">
-                  <div style={{ color: 'white', fontWeight: 'bold', textAlign: 'center', marginBottom: '0.5rem' }}>Book Tickets</div>
-                  <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.8rem', textAlign: 'center' }}>{movie.language} • {movie.genre.split(',')[0]}</div>
+                  <div style={{ color: 'var(--bms-red)', fontWeight: 'bold', textAlign: 'center', marginBottom: '0.5rem' }}>Book Tickets</div>
+                  <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.8rem', textAlign: 'center' }}>{getFullLanguage(movie.language)} • {movie.genre.split(',')[0]}</div>
                 </div>
                 {/* Quick Book button */}
                 <button
@@ -215,8 +243,8 @@ const Home = () => {
                 </button>
               </div>
               <div style={{ padding: '0.7rem 0.5rem 0.8rem' }}>
-                <div style={{ fontWeight: '700', fontSize: '0.9rem', color: '#1a1a2e', marginBottom: '3px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{movie.title}</div>
-                <div style={{ fontSize: '0.75rem', color: '#888', marginBottom: '5px' }}>{movie.genre}</div>
+                <div style={{ fontWeight: '700', fontSize: '0.9rem', color: 'white', marginBottom: '3px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{movie.title}</div>
+                <div style={{ fontSize: '0.75rem', color: '#888', marginBottom: '5px' }}>{getFullLanguage(movie.language)} • {movie.genre}</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <span style={{ color: '#f5a623', fontSize: '0.7rem' }}>{renderStars(movie.vote_average)}</span>
                   <span style={{ color: '#bbb', fontSize: '0.7rem' }}>({parseFloat(movie.vote_average || 0).toFixed(1)})</span>
@@ -226,7 +254,7 @@ const Home = () => {
           ))}
           {nowShowing.length === 0 && !loading && (
             <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '5rem', color: '#999' }}>
-              <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🎬</div>
+              <div style={{ fontSize: '4rem', marginBottom: '1rem', height: '4rem' }}></div>
               <h3 style={{ fontWeight: '600', color: '#555' }}>No movies found</h3>
               <p style={{ color: '#aaa' }}>Try changing the city or selecting a different genre.</p>
             </div>
@@ -263,8 +291,8 @@ const Home = () => {
                     </div>
                   </div>
                   <div style={{ padding: '0.7rem 0.5rem 0.8rem' }}>
-                    <div style={{ fontWeight: '700', fontSize: '0.9rem', color: '#1a1a2e', marginBottom: '3px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{movie.title}</div>
-                    <div style={{ fontSize: '0.75rem', color: '#888', marginBottom: '5px' }}>{movie.genre}</div>
+                    <div style={{ fontWeight: '700', fontSize: '0.9rem', color: 'white', marginBottom: '3px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{movie.title}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#888', marginBottom: '5px' }}>{getFullLanguage(movie.language)} • {movie.genre}</div>
                   </div>
                 </div>
               ))}

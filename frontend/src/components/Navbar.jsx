@@ -64,8 +64,13 @@ const Navbar = () => {
     setFormData(prev => ({ ...prev, [field]: e.target.value }));
   };
 
-  const categoriesLeft = ['Movies', 'Stream', 'Events', 'Plays', 'Sports', 'Activities'];
-  const categoriesRight = ['ListYourShow', 'Corporates', 'Offers', 'Gift Cards'];
+  const categoriesLeft = [
+    { label: 'Movies', path: '/' },
+    { label: 'Help & Support', path: '/help' }
+  ];
+  const categoriesRight = [
+    { label: 'Rewards Program', path: '/rewards' }
+  ];
 
   const inputStyle = {
     width: '100%',
@@ -83,11 +88,12 @@ const Navbar = () => {
     <>
       <nav className="navbar">
         <div className="nav-left">
-          <Link to="/" style={{ textDecoration: 'none' }}>
-            <div className="logo">shows<span>now</span></div>
+          <Link to="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <img src="/logo_icon.png" alt="ShowsNow Logo" style={{ height: '50px', width: '50px', objectFit: 'contain' }} />
+            <div className="logo" style={{ fontSize: '1.5rem', margin: 0 }}>shows<span>now</span></div>
           </Link>
           <div className="search-bar">
-            <span>🔍</span>
+            <span></span>
             <input
               type="text"
               placeholder="Search for Movies, Events, Plays, Sports and Activities"
@@ -135,16 +141,13 @@ const Navbar = () => {
 
       <div className="sub-nav">
         <div className="sub-nav-links">
-          {categoriesLeft.map(cat => {
-            let path = `/category/${cat.toLowerCase()}`;
-            if (cat === 'Movies') path = '/';
-            if (cat === 'Stream') path = '/stream';
-            return <Link key={cat} to={path}>{cat}</Link>;
-          })}
+          {categoriesLeft.map(cat => (
+            <Link key={cat.label} to={cat.path}>{cat.label}</Link>
+          ))}
         </div>
         <div className="sub-nav-links">
           {categoriesRight.map(cat => (
-            <Link key={cat} to={`/category/${cat.toLowerCase().replace(/\s/g, '')}`}>{cat}</Link>
+            <Link key={cat.label} to={cat.path}>{cat.label}</Link>
           ))}
         </div>
       </div>
@@ -243,7 +246,7 @@ const Navbar = () => {
 
               {authError && (
                 <div style={{ background: '#fff0f0', border: '1px solid #ffcccc', borderRadius: '6px', padding: '10px 12px', marginBottom: '12px', color: '#cc0000', fontSize: '0.85rem' }}>
-                  ⚠️ {authError}
+                   {authError}
                 </div>
               )}
 
@@ -264,7 +267,7 @@ const Navbar = () => {
                 }}
               >
                 {authLoading
-                  ? '⏳ Please wait...'
+                  ? 'Please wait...'
                   : authTab === 'login' ? 'Login' : 'Create Account'}
               </button>
             </form>
@@ -288,7 +291,7 @@ const Navbar = () => {
           <div className="drawer-overlay" onClick={() => setShowDrawer(false)}></div>
           <div className="side-drawer">
             <div className="drawer-header">
-              <h3>{user ? `Hey, ${user.name.split(' ')[0]}!` : 'Hey!'}</h3>
+              <h3>{user ? `Welcome, ${user.name.split(' ')[0]}` : 'Welcome to ShowsNow'}</h3>
               <span style={{ cursor: 'pointer' }} onClick={() => setShowDrawer(false)}>✕</span>
             </div>
             <div className="drawer-body">
@@ -298,32 +301,32 @@ const Navbar = () => {
                     {user.email}
                     {user.loyalty_points > 0 && (
                       <span style={{ marginLeft: '8px', background: '#fff3cd', color: '#856404', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '600' }}>
-                        🏆 {user.loyalty_points} pts
+                        {user.loyalty_points} pts
                       </span>
                     )}
                   </div>
-                  <div className="drawer-item" onClick={() => { navigate('/profile'); setShowDrawer(false); }}>👤 My Profile & Bookings</div>
-                  <div className="drawer-item" onClick={() => { navigate('/waitlist'); setShowDrawer(false); }}>🕒 Your Waitlists</div>
+                  <div className="drawer-item" onClick={() => { navigate('/profile'); setShowDrawer(false); }}>My Profile & Bookings</div>
+                  <div className="drawer-item" onClick={() => { navigate('/waitlist'); setShowDrawer(false); }}>Your Waitlists</div>
                   {user.role === 'admin' && (
                     <div 
                       className="drawer-item" 
                       onClick={() => { navigate('/admin'); setShowDrawer(false); }}
                       style={{ color: 'var(--bms-red)', fontWeight: '700' }}
                     >
-                      🛡️ Admin Dashboard
+                      Admin Dashboard
                     </div>
                   )}
-                  <div className="drawer-item" onClick={() => { logout(); setShowDrawer(false); }} style={{ color: 'var(--bms-red)' }}>🚪 Sign Out</div>
+                  <div className="drawer-item" onClick={() => { logout(); setShowDrawer(false); }} style={{ color: 'var(--bms-red)' }}>Sign Out</div>
                 </>
               ) : (
                 <>
-                  <div className="drawer-item" onClick={() => { setShowDrawer(false); openAuthModal('login'); }}>🔒 Login</div>
-                  <div className="drawer-item" onClick={() => { setShowDrawer(false); openAuthModal('register'); }}>✨ Create Account</div>
+                  <div className="drawer-item" onClick={() => { setShowDrawer(false); openAuthModal('login'); }}>Login</div>
+                  <div className="drawer-item" onClick={() => { setShowDrawer(false); openAuthModal('register'); }}>Create Account</div>
                 </>
               )}
               <hr style={{ margin: '1rem 0', borderTop: '1px solid #eee' }} />
-              <div className="drawer-item">🎧 Help & Support</div>
-              <div className="drawer-item">🎁 Rewards</div>
+              <div className="drawer-item" onClick={() => { navigate('/help'); setShowDrawer(false); }}>Help & Support</div>
+              <div className="drawer-item" onClick={() => { navigate('/rewards'); setShowDrawer(false); }}>Rewards Program</div>
             </div>
           </div>
         </>

@@ -1,5 +1,5 @@
 import { useState, useContext, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { AppContext } from '../context/AppContext';
 
 const AutonomousBot = () => {
@@ -99,29 +99,35 @@ const AutonomousBot = () => {
     setLoading(false);
   };
 
+  const location = useLocation();
+  const hideOnPaths = ['/seatlayout', '/checkout', '/buytickets'];
+  if (hideOnPaths.some(p => location.pathname.toLowerCase().startsWith(p))) return null;
+
   return (
     <>
       <div className="ai-fab" onClick={() => setShowAiPanel(!showAiPanel)}>
-        ✨
+        <span style={{ marginRight: '8px' }}>✨</span> Book Instantly
       </div>
 
       {showAiPanel && (
-        <div className="ai-panel" style={{ display: 'flex', flexDirection: 'column' }}>
+        <div className="ai-panel">
           <div className="ai-header">
-            <span>Conversational Agent</span>
-            <span style={{ cursor: 'pointer' }} onClick={() => setShowAiPanel(false)}>✕</span>
+            <span>✨ ShowsNow Concierge</span>
+            <span style={{ cursor: 'pointer', fontSize: '1.2rem', padding: '0 8px' }} onClick={() => setShowAiPanel(false)}>✕</span>
           </div>
           
-          <div className="ai-chat-body" style={{ flex: 1, padding: '1rem', overflowY: 'auto', background: '#f5f7f9', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div className="ai-chat-body" style={{ flex: 1, padding: '1.5rem', overflowY: 'auto', background: 'rgba(10,10,15,0.6)', display: 'flex', flexDirection: 'column', gap: '16px', height: '350px' }}>
             {messages.map((m, i) => (
               <div key={i} style={{ alignSelf: m.sender === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
                 <div style={{
-                  background: m.sender === 'user' ? 'var(--bms-red)' : 'white',
-                  color: m.sender === 'user' ? 'white' : '#333',
-                  padding: '10px 14px', borderRadius: '12px',
-                  boxShadow: '0 2px 5px rgba(0,0,0,0.05)', fontSize: '0.9rem',
-                  borderBottomRightRadius: m.sender === 'user' ? 0 : '12px',
-                  borderBottomLeftRadius: m.sender === 'bot' ? 0 : '12px',
+                  background: m.sender === 'user' ? 'linear-gradient(135deg, #c8a96e, #f84464)' : 'rgba(255,255,255,0.08)',
+                  color: 'white',
+                  padding: '12px 18px', borderRadius: '16px',
+                  boxShadow: m.sender === 'user' ? '0 4px 15px rgba(200, 169, 110, 0.3)' : 'none', 
+                  fontSize: '0.95rem', lineHeight: '1.5',
+                  border: m.sender === 'bot' ? '1px solid rgba(255,255,255,0.1)' : 'none',
+                  borderBottomRightRadius: m.sender === 'user' ? '4px' : '16px',
+                  borderBottomLeftRadius: m.sender === 'bot' ? '4px' : '16px',
                 }}>
                   {m.text}
                 </div>
@@ -149,19 +155,23 @@ const AutonomousBot = () => {
             <div ref={chatEndRef} />
           </div>
           
-          <form onSubmit={handleSubmit} style={{ padding: '1rem', background: 'white', borderTop: '1px solid #eee', display: 'flex', gap: '10px' }}>
+          <form onSubmit={handleSubmit} style={{ padding: '1.2rem', background: 'rgba(255,255,255,0.05)', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', gap: '12px' }}>
             <input 
               type="text" 
               value={prompt} 
               onChange={(e) => setPrompt(e.target.value)} 
-              placeholder="Type your reply..." 
+              placeholder="Ask anything..." 
               disabled={loading}
-              style={{ flex: 1, padding: '10px', borderRadius: '20px', border: '1px solid #ddd', outline: 'none' }}
+              style={{ flex: 1, padding: '12px 16px', borderRadius: '30px', background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)', outline: 'none', color: 'white', fontSize: '0.95rem' }}
             />
             <button type="submit" disabled={loading || !prompt.trim()} style={{
-              background: 'var(--bms-red)', color: 'white', border: 'none',
-              padding: '0 20px', borderRadius: '20px', cursor: 'pointer', fontWeight: 'bold'
-            }}>Send</button>
+              background: 'linear-gradient(135deg, #c8a96e, #f84464)', color: 'white', border: 'none',
+              padding: '0 24px', borderRadius: '30px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.95rem',
+              boxShadow: '0 4px 15px rgba(200, 169, 110, 0.4)', transition: 'transform 0.2s'
+            }}
+            onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.05)'}
+            onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+            >Send</button>
           </form>
         </div>
       )}

@@ -1,4 +1,5 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import ScrollToTop from './components/ScrollToTop';
 import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import MovieDetails from './pages/MovieDetails';
@@ -11,6 +12,8 @@ import AdminDashboard from './pages/AdminDashboard';
 import MyBookings from './pages/MyBookings';
 import Waitlist from './pages/Waitlist';
 import Profile from './pages/Profile';
+import HelpSupport from './pages/HelpSupport';
+import Rewards from './pages/Rewards';
 import AutonomousBot from './components/AutonomousBot';
 import Footer from './components/Footer';
 import { AppProvider } from './context/AppContext';
@@ -20,8 +23,8 @@ function App() {
   return (
     <AppProvider>
       <Router>
-      <Navbar />
-      <div style={{ paddingBottom: '100px' }}>
+        <ScrollToTop />
+        <Navbar />
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/movie/:id" element={<MovieDetails />} />
@@ -34,11 +37,12 @@ function App() {
           <Route path="/profile" element={<Profile />} />
           <Route path="/bookings" element={<MyBookings />} />
           <Route path="/waitlist" element={<Waitlist />} />
+          <Route path="/help" element={<HelpSupport />} />
+          <Route path="/rewards" element={<Rewards />} />
         </Routes>
-      </div>
-      <AutonomousBot />
-      <Footer />
-    </Router>
+        <Footer />
+        <AutonomousBot />
+      </Router>
     </AppProvider>
   );
 }

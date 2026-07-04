@@ -233,15 +233,22 @@ async function seedData() {
 
     let movieIdx = 0;
     for (const m of movies) {
-      const res = await client.query(
-        `INSERT INTO movies (title, genre, duration_mins, language, poster_url, banner_url, overview, vote_average, vote_count, trailer_key, release_date)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING movie_id`,
-        [m.title, m.genre, m.duration_mins, m.language,
-         m.poster_url || null, m.banner_url || null,
-         m.overview || '', m.vote_average || 0, m.vote_count || 0, m.trailer_key || null, m.release_date || null]
-      );
+      const existing = await client.query('SELECT movie_id FROM movies WHERE title = $1', [m.title]);
+      let movieId;
       
-      const movieId = res.rows[0].movie_id;
+      if (existing.rows.length > 0) {
+        movieId = existing.rows[0].movie_id;
+        await client.query('UPDATE movies SET vote_average = $1, vote_count = $2 WHERE movie_id = $3', [m.vote_average || 0, m.vote_count || 0, movieId]);
+      } else {
+        const res = await client.query(
+          `INSERT INTO movies (title, genre, duration_mins, language, poster_url, banner_url, overview, vote_average, vote_count, trailer_key, release_date)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING movie_id`,
+          [m.title, m.genre, m.duration_mins, m.language,
+           m.poster_url || null, m.banner_url || null,
+           m.overview || '', m.vote_average || 0, m.vote_count || 0, m.trailer_key || null, m.release_date || null]
+        );
+        movieId = res.rows[0].movie_id;
+      }
       
       // Assign this movie to EVERY screen across ALL cities
       const screensRes = await client.query('SELECT screen_id, total_seats FROM screens');

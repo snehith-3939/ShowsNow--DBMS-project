@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const cron = require('node-cron');
+const { exec } = require('child_process');
 const { query, pool } = require('./db');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
@@ -235,6 +237,27 @@ app.get('/api/admin/stats', authenticateAdmin, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch admin stats' });
+  }
+});
+
+// Get Admin Waitlists
+app.get('/api/admin/waitlists', authenticateAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT w.waitlist_id, w.status, w.joined_at, w.requested_seats,
+             u.name as user_name, u.email as user_email,
+             s.show_id, s.show_time,
+             m.title as movie_title
+      FROM waitlist w
+      JOIN users u ON w.user_id = u.user_id
+      JOIN shows s ON w.show_id = s.show_id
+      JOIN movies m ON s.movie_id = m.movie_id
+      ORDER BY w.joined_at DESC
+    `);
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch waitlists' });
   }
 });
 
@@ -1235,4 +1258,20 @@ Return ONLY valid JSON with these EXACT fields:
 });
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+
+  // Schedule daily TMDB updates at midnight
+  cron.schedule('0 0 * * *', () => {
+    console.log('[CRON] Running daily TMDB seed script...');
+    exec('node seedData.js', (error, stdout, stderr) => {
+      if (error) {
+        console.error(`[CRON] Error running seed script: ${error.message}`);
+        return;
+      }
+      if (stderr) {
+        console.error(`[CRON] seedData stderr: ${stderr}`);
+      }
+      console.log(`[CRON] seedData output:\n${stdout}`);
+    });
+  });
+  console.log('Daily TMDB cron scheduler initialized (runs at midnight)');
 });

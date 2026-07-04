@@ -31,7 +31,7 @@ const PaymentModal = ({ total, onSuccess, onClose }) => {
         </div>
         {/* Payment Tabs */}
         <div style={{ display: 'flex', borderBottom: '1px solid #eee' }}>
-          {[['upi', '📱 UPI'], ['card', '💳 Card'], ['netbanking', '🏦 NetBanking']].map(([key, label]) => (
+          {[['upi', 'UPI'], ['card', 'Card'], ['netbanking', 'NetBanking']].map(([key, label]) => (
             <button key={key} onClick={() => setTab(key)}
               style={{ flex: 1, padding: '12px', border: 'none', background: tab === key ? '#fff0f3' : 'white', borderBottom: tab === key ? '2px solid var(--bms-red)' : '2px solid transparent', color: tab === key ? 'var(--bms-red)' : '#555', fontWeight: tab === key ? '700' : '400', cursor: 'pointer', fontSize: '0.8rem' }}
             >{label}</button>
@@ -72,7 +72,7 @@ const PaymentModal = ({ total, onSuccess, onClose }) => {
           )}
           <button type="submit" disabled={processing}
             style={{ width: '100%', marginTop: '1rem', padding: '14px', background: processing ? '#ccc' : 'var(--bms-red)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '1.1rem', cursor: processing ? 'wait' : 'pointer' }}>
-            {processing ? '⏳ Processing...' : `Pay ₹${total.toFixed(2)}`}
+            {processing ? 'Processing...' : `Pay ₹${total.toFixed(2)}`}
           </button>
         </form>
       </div>
@@ -185,11 +185,11 @@ const Checkout = () => {
             <QRCodeSVG value={qrData} size={180} bgColor="#fff" fgColor="#333545" level="H" includeMargin />
           </div>
           <div style={{ background: '#f9f9f9', padding: '1.5rem', borderRadius: '8px', textAlign: 'left', marginBottom: '1.5rem' }}>
-            {showInfo && <div style={{ marginBottom: '8px' }}><strong>🎬 Movie:</strong> {showInfo.title}</div>}
-            {showInfo && <div style={{ marginBottom: '8px' }}><strong>🏛️ Cinema:</strong> {showInfo.cinema_name}</div>}
+            {showInfo && <div style={{ marginBottom: '8px' }}><strong>Movie:</strong> {showInfo.title}</div>}
+            {showInfo && <div style={{ marginBottom: '8px' }}><strong>Cinema:</strong> {showInfo.cinema_name}</div>}
             {showInfo && <div style={{ marginBottom: '8px' }}><strong>🕐 Time:</strong> {new Date(showInfo.show_time).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</div>}
             <div style={{ marginBottom: '8px' }}><strong>💺 Seats:</strong> {selectedSeats.map(s => `${s.row_no}${s.seat_no}`).join(', ')}</div>
-            <div style={{ marginBottom: '8px' }}><strong>💰 Total Paid:</strong> ₹{grandTotal.toFixed(2)}</div>
+            <div style={{ marginBottom: '8px' }}><strong>Total Paid:</strong> ₹{grandTotal.toFixed(2)}</div>
             <div style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#aaa', marginTop: '10px' }}>Booking ID: {bookingId}</div>
           </div>
           <button onClick={() => navigate('/')} style={{ background: 'var(--bms-red)', color: 'white', border: 'none', padding: '12px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>← Back to Home</button>
@@ -300,13 +300,13 @@ const Checkout = () => {
 
           {!user && (
             <div style={{ background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '6px', padding: '10px', fontSize: '0.8rem', color: '#856404', marginBottom: '1rem' }}>
-              ⚠️ You must be logged in to complete the booking.
+              You must be logged in to complete the booking.
             </div>
           )}
 
           <button onClick={handlePayClick}
             style={{ width: '100%', padding: '15px', background: 'var(--bms-red)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '1.1rem', cursor: 'pointer' }}>
-            {user ? `Pay ₹${grandTotal.toFixed(2)}` : '🔒 Login & Pay'}
+            {user ? `Pay ₹${grandTotal.toFixed(2)}` : 'Login & Pay'}
           </button>
         </div>
       </div>
@@ -315,7 +315,7 @@ const Checkout = () => {
       {showAuthPrompt && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: 'white', padding: '2rem', borderRadius: '12px', width: '380px', textAlign: 'center' }}>
-            <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>🔒</div>
+            <div style={{ fontSize: '2.5rem', marginBottom: '1rem', height: '2.5rem' }}></div>
             <h3 style={{ marginBottom: '0.5rem' }}>Login Required</h3>
             <p style={{ color: '#666', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
               You need to be logged in to complete your booking.
@@ -343,7 +343,7 @@ const Checkout = () => {
 
       {bookingError && (
         <div style={{ position: 'fixed', bottom: '120px', left: '50%', transform: 'translateX(-50%)', background: '#cc0000', color: 'white', padding: '12px 24px', borderRadius: '8px', zIndex: 3000, fontWeight: '600', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
-          ⚠️ {bookingError}
+          {bookingError}
           <span onClick={() => setBookingError('')} style={{ marginLeft: '12px', cursor: 'pointer', opacity: 0.8 }}>✕</span>
         </div>
       )}

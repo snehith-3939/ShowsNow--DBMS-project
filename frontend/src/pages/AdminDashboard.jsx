@@ -9,6 +9,7 @@ const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [stats, setStats] = useState(null);
   const [bookings, setBookings] = useState([]);
+  const [waitlists, setWaitlists] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Forms State
@@ -29,12 +30,13 @@ const AdminDashboard = () => {
   const fetchData = async () => {
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const [statsRes, bookingsRes, moviesRes, cinemasRes, screensRes] = await Promise.all([
+      const [statsRes, bookingsRes, moviesRes, cinemasRes, screensRes, waitlistsRes] = await Promise.all([
         fetch('http://localhost:5000/api/admin/stats', { headers }),
         fetch('http://localhost:5000/api/admin/bookings', { headers }),
         fetch('http://localhost:5000/api/movies'),
         fetch('http://localhost:5000/api/cinemas'),
-        fetch('http://localhost:5000/api/screens')
+        fetch('http://localhost:5000/api/screens'),
+        fetch('http://localhost:5000/api/admin/waitlists', { headers })
       ]);
 
       const statsData = await statsRes.json();
@@ -42,12 +44,14 @@ const AdminDashboard = () => {
       const moviesData = await moviesRes.json();
       const cinemasData = await cinemasRes.json();
       const screensData = await screensRes.json();
+      const waitlistsData = await waitlistsRes.json();
 
       setStats(statsData);
       setBookings(bookingsData);
       setMovies(moviesData);
       setCinemas(cinemasData);
       setScreens(screensData);
+      setWaitlists(waitlistsData);
       setLoading(false);
     } catch (error) {
       console.error('Failed to fetch admin data:', error);
@@ -91,6 +95,38 @@ const AdminDashboard = () => {
     } catch { alert('Error updating price'); }
   };
 
+  const handleAddMovie = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('http://localhost:5000/api/admin/movies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(movieForm)
+      });
+      if (res.ok) {
+        alert('Movie added successfully!');
+        setMovieForm({ title: '', genre: '', duration_mins: '', language: '', poster_url: '', banner_url: '', overview: '' });
+        fetchData();
+      }
+    } catch { alert('Error adding movie'); }
+  };
+
+  const handleAddShow = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('http://localhost:5000/api/admin/shows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(showForm)
+      });
+      if (res.ok) {
+        alert('Show added successfully!');
+        setShowForm({ movie_id: '', screen_id: '', show_time: '', base_price: '' });
+        fetchData();
+      }
+    } catch { alert('Error adding show'); }
+  };
+
   if (loading) return <div style={{ padding: '4rem', textAlign: 'center', color: 'white' }}>Loading Dashboard...</div>;
 
   return (
@@ -101,12 +137,12 @@ const AdminDashboard = () => {
           <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--bms-muted)', fontWeight: 'bold', marginBottom: '1.5rem', paddingLeft: '1rem', letterSpacing: '1px' }}>Admin Dashboard</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
             {[
-              { id: 'overview', label: 'Overview', icon: '📊' },
-              { id: 'movies', label: 'Movies', icon: '🎬' },
-              { id: 'shows', label: 'Schedules', icon: '🕒' },
-              { id: 'pricing', label: 'Pricing Rules', icon: '💰' },
-              { id: 'waitlist', label: 'Waitlists', icon: '⏳' },
-              { id: 'bookings', label: 'Global Bookings', icon: '🎟️' },
+              { id: 'overview', label: 'Overview', icon: '' },
+              { id: 'movies', label: 'Movies', icon: '' },
+              { id: 'shows', label: 'Schedules', icon: '' },
+              { id: 'pricing', label: 'Pricing Rules', icon: '' },
+              { id: 'waitlist', label: 'Waitlists', icon: '' },
+              { id: 'bookings', label: 'Global Bookings', icon: '' },
             ].map(tab => (
               <div
                 key={tab.id}
@@ -174,6 +210,89 @@ const AdminDashboard = () => {
             </div>
           )}
 
+          {activeTab === 'movies' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '2rem' }}>
+              <div style={cardStyle}>
+                <h3 style={{color: 'white', marginBottom: '1.5rem'}}>Add New Movie</h3>
+                <form onSubmit={handleAddMovie}>
+                  <label style={labelStyle}>Title</label>
+                  <input style={inputStyle} value={movieForm.title} onChange={e => setMovieForm({...movieForm, title: e.target.value})} required />
+                  <label style={labelStyle}>Genre</label>
+                  <input style={inputStyle} value={movieForm.genre} onChange={e => setMovieForm({...movieForm, genre: e.target.value})} required />
+                  <label style={labelStyle}>Language</label>
+                  <input style={inputStyle} value={movieForm.language} onChange={e => setMovieForm({...movieForm, language: e.target.value})} required />
+                  <label style={labelStyle}>Duration (mins)</label>
+                  <input type="number" style={inputStyle} value={movieForm.duration_mins} onChange={e => setMovieForm({...movieForm, duration_mins: e.target.value})} required />
+                  <label style={labelStyle}>Poster URL</label>
+                  <input style={inputStyle} value={movieForm.poster_url} onChange={e => setMovieForm({...movieForm, poster_url: e.target.value})} />
+                  <button type="submit" style={submitBtnStyle}>Create Movie</button>
+                </form>
+              </div>
+              <div style={cardStyle}>
+                <h3 style={{color: 'white', marginBottom: '1.5rem'}}>Movie Catalog</h3>
+                <div style={{ overflowX: 'auto', maxHeight: '500px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: 'var(--bms-muted)', fontSize: '0.85rem', textAlign: 'left' }}>
+                        <th style={{ padding: '12px' }}>Poster</th>
+                        <th style={{ padding: '12px' }}>Title</th>
+                        <th style={{ padding: '12px' }}>Genre</th>
+                        <th style={{ padding: '12px' }}>Language</th>
+                        <th style={{ padding: '12px' }}>Duration</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {movies.map(m => (
+                        <tr key={m.movie_id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: '0.9rem', color: '#E5E7EB' }}>
+                          <td style={{ padding: '12px' }}><img src={m.poster_url} style={{ width: '40px', borderRadius: '4px' }} alt="" /></td>
+                          <td style={{ padding: '12px', fontWeight: '500' }}>{m.title}</td>
+                          <td style={{ padding: '12px', color: 'var(--bms-muted)' }}>{m.genre}</td>
+                          <td style={{ padding: '12px', color: 'var(--bms-muted)' }}>{m.language}</td>
+                          <td style={{ padding: '12px', color: 'var(--bms-muted)' }}>{m.duration_mins}m</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'shows' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '2rem' }}>
+              <div style={cardStyle}>
+                <h3 style={{color: 'white', marginBottom: '1.5rem'}}>Schedule New Show</h3>
+                <form onSubmit={handleAddShow}>
+                  <label style={labelStyle}>Movie</label>
+                  <select style={inputStyle} value={showForm.movie_id} onChange={e => setShowForm({...showForm, movie_id: e.target.value})} required>
+                    <option value="">Select Movie</option>
+                    {movies.map(m => <option key={m.movie_id} value={m.movie_id}>{m.title}</option>)}
+                  </select>
+                  <label style={labelStyle}>Screen</label>
+                  <select style={inputStyle} value={showForm.screen_id} onChange={e => setShowForm({...showForm, screen_id: e.target.value})} required>
+                    <option value="">Select Screen</option>
+                    {screens.map(s => {
+                       const c = cinemas.find(cin => cin.cinema_id === s.cinema_id);
+                       return <option key={s.screen_id} value={s.screen_id}>{c ? c.name : ''} - {s.name}</option>;
+                    })}
+                  </select>
+                  <label style={labelStyle}>Show Time</label>
+                  <input type="datetime-local" style={inputStyle} value={showForm.show_time} onChange={e => setShowForm({...showForm, show_time: e.target.value})} required />
+                  <label style={labelStyle}>Base Price (₹)</label>
+                  <input type="number" style={inputStyle} value={showForm.base_price} onChange={e => setShowForm({...showForm, base_price: e.target.value})} required />
+                  <button type="submit" style={submitBtnStyle}>Schedule Show</button>
+                </form>
+              </div>
+              <div style={cardStyle}>
+                <h3 style={{color: 'white', marginBottom: '1.5rem'}}>Global Shows Database</h3>
+                <p style={{color: 'var(--bms-muted)', fontSize: '0.9rem'}}>Upcoming shows will appear on the user's booking interface based on their selected city.</p>
+                <div style={{ padding: '2rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', color: '#888', textAlign: 'center', marginTop: '1rem' }}>
+                  Select a city on the main app to view its localized show schedules.<br/><br/><i>Admin view of all raw global shows is coming soon.</i>
+                </div>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'pricing' && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
                <div style={cardStyle}>
@@ -191,7 +310,10 @@ const AdminDashboard = () => {
                </div>
                
                <div style={{...cardStyle, background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.1), rgba(0,0,0,0.8))', border: '1px solid rgba(168, 85, 247, 0.3)'}}>
-                 <h3 style={{color: '#c084fc', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '10px'}}><span>⚡</span> Autonomous Surge Engine</h3>
+                 <h3 style={{color: '#c084fc', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '10px'}}>
+                   <img src="/logo_icon.png" alt="Logo" style={{ width: '36px', height: '36px', objectFit: 'contain' }} />
+                   Autonomous Surge Engine
+                 </h3>
                  <p style={{color: 'var(--bms-text)', fontSize: '0.95rem', lineHeight: '1.6'}}>
                    The DBMS is currently handling dynamic pricing autonomously via a PL/pgSQL trigger (`update_show_availability_and_surge`). 
                    <br/><br/>
@@ -220,7 +342,32 @@ const AdminDashboard = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      <tr><td colSpan="4" style={{ padding: '20px', textAlign: 'center', color: '#666' }}>No active waitlists currently.</td></tr>
+                      {waitlists.length === 0 ? (
+                        <tr><td colSpan="4" style={{ padding: '20px', textAlign: 'center', color: '#666' }}>No active waitlists currently.</td></tr>
+                      ) : (
+                        waitlists.map(w => (
+                          <tr key={w.waitlist_id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: '0.9rem', color: '#E5E7EB' }}>
+                            <td style={{ padding: '12px' }}>
+                              <div>{w.movie_title}</div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--bms-muted)' }}>{new Date(w.show_time).toLocaleString()}</div>
+                            </td>
+                            <td style={{ padding: '12px' }}>
+                              <div>{w.user_name}</div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--bms-muted)' }}>{w.user_email}</div>
+                            </td>
+                            <td style={{ padding: '12px' }}>
+                              <span style={{ 
+                                padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: '700',
+                                background: w.status === 'Auto-Booked' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(234, 179, 8, 0.2)',
+                                color: w.status === 'Auto-Booked' ? '#4ade80' : '#eab308'
+                              }}>
+                                {w.status.toUpperCase()} ({w.requested_seats} seats)
+                              </span>
+                            </td>
+                            <td style={{ padding: '12px', textAlign: 'right', color: 'var(--bms-muted)' }}>{new Date(w.joined_at).toLocaleDateString()}</td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
               </div>

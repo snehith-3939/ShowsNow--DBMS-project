@@ -50,6 +50,11 @@ const ShowTimings = () => {
     return '#e74c3c';
   };
 
+  const getFullLanguage = (lang) => {
+    const map = { 'EN': 'English', 'HI': 'Hindi', 'TA': 'Tamil', 'TE': 'Telugu', 'ML': 'Malayalam', 'KN': 'Kannada' };
+    return map[lang] || lang;
+  };
+
   if (!movie) return <div style={{ padding: '4rem', textAlign: 'center' }}>Loading...</div>;
 
   return (
@@ -60,7 +65,7 @@ const ShowTimings = () => {
           <span style={{ cursor: 'pointer', opacity: 0.7 }} onClick={() => navigate(-1)}>← Back</span>
           <h1 style={{ fontSize: '1.4rem' }}>{movie.title}</h1>
           <span style={{ background: 'rgba(255,255,255,0.15)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem' }}>UA</span>
-          <span style={{ opacity: 0.7, fontSize: '0.85rem' }}>{movie.duration_mins} min • {movie.genre}</span>
+          <span style={{ opacity: 0.7, fontSize: '0.85rem' }}>{movie.duration_mins} min • {getFullLanguage(movie.language)} • {movie.genre}</span>
         </div>
 
         {/* 7-Day Date Scroller */}
@@ -123,7 +128,7 @@ const ShowTimings = () => {
       <div style={{ padding: '1.5rem 4rem' }}>
         {Object.keys(cinemas).length === 0 ? (
           <div style={{ textAlign: 'center', padding: '4rem', color: '#666' }}>
-            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🎬</div>
+            <div style={{ fontSize: '3rem', marginBottom: '1rem', height: '3rem' }}></div>
             <h3>No shows scheduled for this date.</h3>
             <p>Try selecting a different date above.</p>
           </div>
@@ -135,9 +140,9 @@ const ShowTimings = () => {
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span style={{ color: 'var(--bms-red)', fontSize: '1.1rem' }}>❤</span>
-                      <span style={{ fontWeight: '700', fontSize: '1rem' }}>{cinemas[cinemaId].cinema_name}</span>
+                      <span style={{ fontWeight: '700', fontSize: '1rem', color: '#222' }}>{cinemas[cinemaId].cinema_name}</span>
                     </div>
-                    <div style={{ color: '#888', fontSize: '0.8rem', marginTop: '4px' }}>
+                    <div style={{ color: '#666', fontSize: '0.8rem', marginTop: '4px' }}>
                       {cinemas[cinemaId].address}, {cinemas[cinemaId].city}
                     </div>
                   </div>
@@ -169,7 +174,7 @@ const ShowTimings = () => {
                     </div>
                     <div style={{ fontSize: '0.65rem', color: '#888', marginTop: '3px' }}>{show.screen_name}</div>
                     {parseFloat(show.surge_multiplier) > 1.0 && (
-                      <div style={{ fontSize: '0.6rem', color: 'orange', fontWeight: 'bold', marginTop: '2px' }}>⚡ Surge</div>
+                      <div style={{ fontSize: '0.6rem', color: 'orange', fontWeight: 'bold', marginTop: '2px' }}>Surge</div>
                     )}
                   </div>
                 ))}

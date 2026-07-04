@@ -113,14 +113,14 @@ const SeatLayout = () => {
             <span style={{ cursor: 'pointer', color: '#666' }} onClick={() => navigate(-1)}>←</span>
             <img src={showInfo.poster_url} alt={showInfo.title} style={{ width: '40px', borderRadius: '4px' }} />
             <div>
-              <div style={{ fontWeight: '700' }}>{showInfo.title}</div>
-              <div style={{ color: '#888', fontSize: '0.8rem' }}>
+              <div style={{ fontWeight: '700', color: '#111', fontSize: '1.2rem', marginBottom: '2px' }}>{showInfo.title}</div>
+              <div style={{ color: '#555', fontSize: '0.85rem' }}>
                 {showInfo.cinema_name} • {showInfo.screen_name} • {new Date(showInfo.show_time).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} • {new Date(showInfo.show_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
               </div>
             </div>
           </div>
           {parseFloat(showInfo.surge_multiplier) > 1.0 && (
-            <div style={{ background: '#fff3cd', color: '#856404', padding: '5px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold' }}>⚡ Surge +20%</div>
+            <div style={{ background: '#fff3cd', color: '#856404', padding: '5px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold' }}>Surge +20%</div>
           )}
         </div>
       )}
@@ -168,8 +168,8 @@ const SeatLayout = () => {
       {selectedSeats.length > 0 && (
         <div style={{ background: 'white', padding: '1rem 2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 -4px 12px rgba(0,0,0,0.08)', position: 'fixed', bottom: 0, width: '100%', zIndex: 100 }}>
           <div>
-            <div style={{ fontWeight: '700', fontSize: '1.1rem' }}>{selectedSeats.length} Ticket{selectedSeats.length > 1 ? 's' : ''} — ₹{totalTicketPrice.toFixed(0)}</div>
-            <div style={{ fontSize: '0.8rem', color: '#888' }}>{selectedSeats.map(s => `${s.row_no}${s.seat_no}`).join(', ')}</div>
+            <div style={{ fontWeight: '700', fontSize: '1.1rem', color: '#222' }}>{selectedSeats.length} Ticket{selectedSeats.length > 1 ? 's' : ''} — ₹{totalTicketPrice.toFixed(0)}</div>
+            <div style={{ fontSize: '0.8rem', color: '#666' }}>{selectedSeats.map(s => `${s.row_no}${s.seat_no}`).join(', ')}</div>
           </div>
           <button
             onClick={proceedToCheckout}
