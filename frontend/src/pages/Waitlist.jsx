@@ -51,10 +51,10 @@ const Waitlist = () => {
           {waitlist.map(w => (
             <div key={w.waitlist_id} style={{ display: 'flex', background: '#1a1c23', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
               {w.poster_url && (
-                <img src={w.poster_url} alt={w.title} style={{ width: '140px', objectFit: 'cover' }} />
+                <img src={w.poster_url} alt={w.title || w.movie_title} style={{ width: '140px', objectFit: 'cover' }} />
               )}
               <div style={{ padding: '1.5rem', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                <h2 style={{ margin: '0 0 0.5rem 0', color: 'white' }}>{w.title}</h2>
+                <h2 style={{ margin: '0 0 0.5rem 0', color: 'white' }}>{w.title || w.movie_title}</h2>
                 <div style={{ color: 'var(--bms-muted)', fontSize: '0.95rem', marginBottom: '0.5rem' }}>
                   <strong>{w.cinema_name}</strong>
                 </div>

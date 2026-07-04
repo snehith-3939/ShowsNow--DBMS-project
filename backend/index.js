@@ -1148,7 +1148,7 @@ app.get('/api/user/waitlist', authenticateToken, async (req, res) => {
     const { rows } = await query(`
       SELECT w.waitlist_id, w.status, w.joined_at, w.requested_seats,
              s.show_id, s.show_time,
-             m.title as movie_title,
+             m.title, m.title as movie_title, m.poster_url,
              c.city, c.name as cinema_name
       FROM waitlist w
       JOIN shows s ON w.show_id = s.show_id
