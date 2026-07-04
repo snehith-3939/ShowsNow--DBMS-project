@@ -21,7 +21,7 @@ const SeatLayout = () => {
 
   useEffect(() => {
     const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-    fetch(`\${import.meta.env.VITE_API_URL || (import.meta.env.VITE_API_URL || 'http://localhost:5000')}/api/seats/${id}`, { headers })
+    fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/seats/${id}`, { headers })
       .then(r => r.json())
       .then(data => {
         setSeats(data);
@@ -30,7 +30,7 @@ const SeatLayout = () => {
           setSelectedSeats(preSelected);
         }
       });
-    fetch(`\${import.meta.env.VITE_API_URL || (import.meta.env.VITE_API_URL || 'http://localhost:5000')}/api/shows/${id}`).then(r => r.json()).then(setShowInfo);
+    fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/shows/${id}`).then(r => r.json()).then(setShowInfo);
   }, [id, preSelectedSeatIds]);
 
   const toggleSeat = (seat) => {

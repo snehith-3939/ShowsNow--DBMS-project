@@ -24,14 +24,14 @@ const ShowTimings = () => {
   const activeDate = selectedDate || dates[0];
 
   useEffect(() => {
-    fetch(`\${import.meta.env.VITE_API_URL || (import.meta.env.VITE_API_URL || 'http://localhost:5000')}/api/movies/${id}`)
+    fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/movies/${id}`)
       .then(res => res.json())
       .then(setMovie);
   }, [id]);
 
   useEffect(() => {
     const dateStr = toDateStr(activeDate);
-    fetch(`\${import.meta.env.VITE_API_URL || (import.meta.env.VITE_API_URL || 'http://localhost:5000')}/api/shows/movie/${id}?date=${dateStr}&city=${selectedCity}`)
+    fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/shows/movie/${id}?date=${dateStr}&city=${selectedCity}`)
       .then(res => res.json())
       .then(setShows);
   }, [id, activeDate, selectedCity]);

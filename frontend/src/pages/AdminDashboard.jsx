@@ -110,7 +110,7 @@ const AdminDashboard = () => {
   const handleUpdatePrice = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(`\${import.meta.env.VITE_API_URL || (import.meta.env.VITE_API_URL || 'http://localhost:5000')}/api/admin/shows/${pricingForm.show_id}`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/admin/shows/${pricingForm.show_id}`, {
         method: 'PATCH',
         headers: { 
           'Content-Type': 'application/json',
