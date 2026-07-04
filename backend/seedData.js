@@ -265,11 +265,9 @@ async function seedData() {
         CROSS JOIN screens s
         CROSS JOIN generate_series(0, 4) AS d(dayOffset)
         CROSS JOIN (VALUES (630), (810), (990), (1170)) AS slots(baseMin)
-        WHERE m.movie_id = $1 
-          AND (m.release_date IS NULL OR (DATE_TRUNC('day', NOW()) + (d.dayOffset || ' days')::INTERVAL) >= m.release_date)
-          AND MOD(ABS(hashtext(s.screen_id::text)), $3) = $2
+        WHERE m.movie_id = $1 AND (m.release_date IS NULL OR (DATE_TRUNC('day', NOW()) + (d.dayOffset || ' days')::INTERVAL) >= m.release_date)
         ON CONFLICT DO NOTHING;
-      `, [movieId, movieIdx, movies.length]);
+      `, [movieId, movieIdx]);
       movieIdx++;
     }
 
