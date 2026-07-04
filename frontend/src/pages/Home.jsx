@@ -24,7 +24,7 @@ const Home = () => {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
-    fetch(`http://localhost:5000/api/movies?city=${encodeURIComponent(selectedCity)}`)
+    fetch(`\${import.meta.env.VITE_API_URL || (import.meta.env.VITE_API_URL || 'http://localhost:5000')}/api/movies?city=${encodeURIComponent(selectedCity)}`)
       .then(res => res.json())
       .then(data => { setMovies(data); setLoading(false); })
       .catch(() => setLoading(false));

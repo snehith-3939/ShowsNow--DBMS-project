@@ -59,12 +59,12 @@ const AdminDashboard = () => {
       setLoading(true);
       const headers = { Authorization: `Bearer ${token}` };
       const [statsRes, bookingsRes, moviesRes, cinemasRes, screensRes, waitlistsRes] = await Promise.all([
-        fetch('http://localhost:5000/api/admin/stats', { headers }),
-        fetch('http://localhost:5000/api/admin/bookings', { headers }),
-        fetch('http://localhost:5000/api/movies'),
-        fetch('http://localhost:5000/api/cinemas'),
-        fetch('http://localhost:5000/api/screens'),
-        fetch('http://localhost:5000/api/admin/waitlists', { headers })
+        fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/admin/stats', { headers }),
+        fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/admin/bookings', { headers }),
+        fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/movies'),
+        fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/cinemas'),
+        fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/screens'),
+        fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/admin/waitlists', { headers })
       ]);
 
       const statsData = expectAdminStats(await readJsonOrThrow(statsRes, 'Admin stats'));
@@ -91,7 +91,7 @@ const AdminDashboard = () => {
   const fetchShows = async () => {
     try {
       // Basic fetch to populate shows for pricing rules
-      const res = await fetch('http://localhost:5000/api/movies');
+      const res = await fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/movies');
       // For a real app we'd fetch all raw shows. Since we only have /api/movies/:id/shows, we'll keep this simple.
       // In this demo, we'll just show the UI for it.
     } catch (error) {
@@ -110,7 +110,7 @@ const AdminDashboard = () => {
   const handleUpdatePrice = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(`http://localhost:5000/api/admin/shows/${pricingForm.show_id}`, {
+      const res = await fetch(`\${import.meta.env.VITE_API_URL || (import.meta.env.VITE_API_URL || 'http://localhost:5000')}/api/admin/shows/${pricingForm.show_id}`, {
         method: 'PATCH',
         headers: { 
           'Content-Type': 'application/json',
@@ -128,7 +128,7 @@ const AdminDashboard = () => {
   const handleAddMovie = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch('http://localhost:5000/api/admin/movies', {
+      const res = await fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/admin/movies', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(movieForm)
@@ -144,7 +144,7 @@ const AdminDashboard = () => {
   const handleAddShow = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch('http://localhost:5000/api/admin/shows', {
+      const res = await fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/admin/shows', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(showForm)

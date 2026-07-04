@@ -21,18 +21,18 @@ const Profile = () => {
         const headers = { 'Authorization': `Bearer ${token}` };
         
         // Fetch Profile
-        const profileRes = await fetch('http://localhost:5000/api/user/profile', { headers });
+        const profileRes = await fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/user/profile', { headers });
         if (profileRes.ok) setProfile(await profileRes.json());
 
         // Fetch Loyalty
-        const loyaltyRes = await fetch('http://localhost:5000/api/user/loyalty', { headers });
+        const loyaltyRes = await fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/user/loyalty', { headers });
         if (loyaltyRes.ok) {
           const lData = await loyaltyRes.json();
           setLoyalty(lData.balance || 0);
         }
 
         // Fetch Bookings
-        const bookingsRes = await fetch('http://localhost:5000/api/user/bookings', { headers });
+        const bookingsRes = await fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/user/bookings', { headers });
         if (bookingsRes.ok) {
           const bData = await bookingsRes.json();
           setBookings(bData);

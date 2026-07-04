@@ -103,10 +103,10 @@ const Checkout = () => {
       navigate('/');
       return;
     }
-    fetch('http://localhost:5000/api/snacks').then(r => r.json()).then(setSnacks);
+    fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/snacks').then(r => r.json()).then(setSnacks);
     
     if (user && token) {
-      fetch('http://localhost:5000/api/user/loyalty', {
+      fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/user/loyalty', {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       .then(r => r.json())
@@ -153,7 +153,7 @@ const Checkout = () => {
     const snackArray = Object.keys(cartSnacks).map(id => ({ id, quantity: cartSnacks[id] }));
     const paymentMethod = { upi: 'UPI', card: 'Card', netbanking: 'NetBanking' }[method] || 'Demo';
     try {
-      const res = await fetch('http://localhost:5000/api/bookings', {
+      const res = await fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/bookings', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

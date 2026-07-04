@@ -29,7 +29,7 @@ const AutonomousBot = () => {
     const mergedContext = currentContext || { city: selectedCity };
 
     try {
-      const res = await fetch('http://localhost:5000/api/autonomous-agent', {
+      const res = await fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/autonomous-agent', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -86,7 +86,7 @@ const AutonomousBot = () => {
   const handleJoinWaitlist = async (waitlistData) => {
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:5000/api/waitlist', {
+      const res = await fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/waitlist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(waitlistData)

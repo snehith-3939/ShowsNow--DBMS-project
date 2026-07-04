@@ -4,7 +4,7 @@ const Stream = () => {
   const [shows, setShows] = useState([]);
 
   useEffect(() => {
-    fetch('http://localhost:5000/api/stream')
+    fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/stream')
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) setShows(data);

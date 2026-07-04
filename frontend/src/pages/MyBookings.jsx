@@ -17,7 +17,7 @@ const MyBookings = () => {
 
     const fetchBookings = async () => {
       try {
-        const res = await fetch('http://localhost:5000/api/user/bookings', {
+        const res = await fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/user/bookings', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (!res.ok) throw new Error('Failed to fetch bookings');
