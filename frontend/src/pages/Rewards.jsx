@@ -1,12 +1,26 @@
-import { useContext } from 'react';
+import { useContext, useState, useEffect } from 'react';
 import { AppContext } from '../context/AppContext';
 import { useNavigate } from 'react-router-dom';
+import { Droplet, Coffee, Popcorn, CupSoda, Ticket, Crown } from 'lucide-react';
 
 const Rewards = () => {
   const { user } = useContext(AppContext);
   const navigate = useNavigate();
+  const [points, setPoints] = useState(0);
 
-  const points = user?.loyalty_points || 0;
+  useEffect(() => {
+    if (user) {
+      const token = localStorage.getItem('token');
+      if (token) {
+        fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/user/loyalty', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+        .then(res => res.json())
+        .then(data => setPoints(data.balance || 0))
+        .catch(console.error);
+      }
+    }
+  }, [user]);
   
   let tier = 'Bronze';
   let nextTier = 'Silver';
@@ -27,12 +41,12 @@ const Rewards = () => {
   }
 
   const rewards = [
-    { title: "Free Bottled Water", points: 100, icon: "💧" },
-    { title: "Free Cold Coffee", points: 300, icon: "☕" },
-    { title: "Free Medium Popcorn", points: 500, icon: "🍿" },
-    { title: "Free Combo (Popcorn + Coke)", points: 800, icon: "🥤" },
-    { title: "Free 2D Movie Ticket", points: 1500, icon: "🎟" },
-    { title: "Free VIP Recliner Ticket", points: 2500, icon: "👑" },
+    { title: "Free Bottled Water", points: 100, icon: <Droplet size={48} strokeWidth={1.5} color="#4fc3f7" /> },
+    { title: "Free Cold Coffee", points: 300, icon: <Coffee size={48} strokeWidth={1.5} color="#d4a373" /> },
+    { title: "Free Medium Popcorn", points: 500, icon: <Popcorn size={48} strokeWidth={1.5} color="#ffd166" /> },
+    { title: "Free Combo (Popcorn + Coke)", points: 800, icon: <CupSoda size={48} strokeWidth={1.5} color="#ef476f" /> },
+    { title: "Free 2D Movie Ticket", points: 1500, icon: <Ticket size={48} strokeWidth={1.5} color="#06d6a0" /> },
+    { title: "Free VIP Recliner Ticket", points: 2500, icon: <Crown size={48} strokeWidth={1.5} color="#ffd700" /> },
   ];
 
   if (!user) {
@@ -103,7 +117,9 @@ const Rewards = () => {
             const canAfford = points >= reward.points;
             return (
               <div key={idx} style={{ background: '#1a1c23', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', position: 'relative', overflow: 'hidden' }}>
-                <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>{reward.icon}</div>
+                <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)', width: '80px', height: '80px', borderRadius: '50%', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  {reward.icon}
+                </div>
                 <h3 style={{ fontSize: '1.1rem', marginBottom: '0.5rem', color: 'white' }}>{reward.title}</h3>
                 <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: canAfford ? '#FFD700' : '#666', marginBottom: '1.5rem' }}>
                   {reward.points} pts

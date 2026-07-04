@@ -93,36 +93,7 @@ const ShowTimings = () => {
         </div>
       </div>
 
-      {/* Filter Bar */}
-      <div style={{ background: 'white', padding: '0.75rem 4rem', borderBottom: '1px solid #eee', display: 'flex', gap: '1rem', alignItems: 'center' }}>
-        <span style={{ color: '#666', fontSize: '0.85rem', fontWeight: '500' }}>Filters:</span>
-        {['All', '2D', 'IMAX', '3D'].map(f => (
-          <div
-            key={f}
-            onClick={() => setFormatFilter(f)}
-            style={{
-              padding: '4px 14px', borderRadius: '20px', fontSize: '0.8rem', cursor: 'pointer',
-              border: `1px solid ${formatFilter === f ? 'var(--bms-red)' : '#ddd'}`,
-              color: formatFilter === f ? 'var(--bms-red)' : '#555',
-              background: formatFilter === f ? '#fff0f3' : 'white'
-            }}
-          >{f}</div>
-        ))}
-        <div style={{ marginLeft: '1rem', display: 'flex', gap: '0.5rem' }}>
-          {['All', 'English', 'Hindi', 'Tamil'].map(l => (
-            <div
-              key={l}
-              onClick={() => setLangFilter(l)}
-              style={{
-                padding: '4px 14px', borderRadius: '20px', fontSize: '0.8rem', cursor: 'pointer',
-                border: `1px solid ${langFilter === l ? '#1a73e8' : '#ddd'}`,
-                color: langFilter === l ? '#1a73e8' : '#555',
-                background: langFilter === l ? '#e8f0fe' : 'white'
-              }}
-            >{l}</div>
-          ))}
-        </div>
-      </div>
+
 
       {/* Cinema Listings */}
       <div style={{ padding: '1.5rem 4rem' }}>

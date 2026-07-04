@@ -250,37 +250,24 @@ async function seedData() {
         movieId = res.rows[0].movie_id;
       }
       
-      // Assign this movie to EVERY screen across ALL cities
-      const screensRes = await client.query('SELECT screen_id, total_seats FROM screens');
-      const allScreens = screensRes.rows;
-
-      if (allScreens.length > 0) {
-        const baseSlotMinutes = [630, 810, 990, 1170]; // 10:30, 13:30, 16:30, 19:30 in mins from midnight
-
-        for (const screen of allScreens) {
-          for (let dayOffset = 0; dayOffset < 7; dayOffset++) { // Schedule up to 7 days out
-            
-            // Check if the show date is >= release_date
-            const showDate = new Date();
-            showDate.setDate(showDate.getDate() + dayOffset);
-            showDate.setHours(0,0,0,0);
-            const releaseDate = new Date(m.release_date);
-            releaseDate.setHours(0,0,0,0);
-
-            if (showDate >= releaseDate) {
-              for (const baseMin of baseSlotMinutes) {
-                const slotMin = baseMin + (movieIdx * 15); // 15-min stagger per movie
-                await client.query(
-                  `INSERT INTO shows (movie_id, screen_id, show_time, base_price, available_seats)
-                   VALUES ($1, $2, DATE_TRUNC('day', NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata' + ($3 || ' days')::INTERVAL + ($4 || ' minutes')::INTERVAL, $5, $6)
-                   ON CONFLICT DO NOTHING`,
-                  [movieId, screen.screen_id, dayOffset, slotMin, Math.floor(Math.random() * 200) + 200, screen.total_seats]
-                );
-              }
-            }
-          }
-        }
-      }
+      // Use a single SQL query to generate all shows instantly for this movie
+      await client.query(`
+        INSERT INTO shows (movie_id, screen_id, show_time, base_price, available_seats)
+        SELECT 
+            m.movie_id, 
+            s.screen_id, 
+            DATE_TRUNC('day', NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata' 
+              + (d.dayOffset || ' days')::INTERVAL 
+              + ((slots.baseMin + ($2::int * 15)) || ' minutes')::INTERVAL,
+            FLOOR(RANDOM() * 200) + 200,
+            s.total_seats
+        FROM movies m
+        CROSS JOIN screens s
+        CROSS JOIN generate_series(0, 4) AS d(dayOffset)
+        CROSS JOIN (VALUES (630), (810), (990), (1170)) AS slots(baseMin)
+        WHERE m.movie_id = $1 AND (m.release_date IS NULL OR (DATE_TRUNC('day', NOW()) + (d.dayOffset || ' days')::INTERVAL) >= m.release_date)
+        ON CONFLICT DO NOTHING;
+      `, [movieId, movieIdx]);
       movieIdx++;
     }
 

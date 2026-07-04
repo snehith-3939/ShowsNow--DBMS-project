@@ -10,6 +10,7 @@ const Navbar = () => {
   const [showCityModal, setShowCityModal] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showDrawer, setShowDrawer] = useState(false);
+  const [latestBooking, setLatestBooking] = useState(null);
 
   // Auth form state
   const [authTab, setAuthTab] = useState('login'); // 'login' | 'register'
@@ -38,6 +39,27 @@ const Navbar = () => {
     window.addEventListener('bms:open-auth', handler);
     return () => window.removeEventListener('bms:open-auth', handler);
   }, []);
+
+  // Fetch latest booking when drawer opens
+  useEffect(() => {
+    if (showDrawer && user) {
+      const token = localStorage.getItem('token');
+      if (token) {
+        fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/user/bookings', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data) && data.length > 0) {
+            setLatestBooking(data[0]);
+          } else {
+            setLatestBooking(null);
+          }
+        })
+        .catch(console.error);
+      }
+    }
+  }, [showDrawer, user]);
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
@@ -300,11 +322,25 @@ const Navbar = () => {
                   <div style={{ padding: '12px 0', fontSize: '0.8rem', color: '#888', borderBottom: '1px solid #f0f0f0', marginBottom: '8px' }}>
                     {user.email}
                     {user.loyalty_points > 0 && (
-                      <span style={{ marginLeft: '8px', background: '#fff3cd', color: '#856404', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '600' }}>
+                      <span style={{ marginLeft: '8px', background: 'rgba(200, 169, 110, 0.2)', color: 'var(--bms-red)', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '600' }}>
                         {user.loyalty_points} pts
                       </span>
                     )}
                   </div>
+                  
+                  {latestBooking && (
+                    <div style={{ background: '#1a1c23', padding: '12px', borderRadius: '8px', marginBottom: '1rem', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <div style={{ fontSize: '0.75rem', color: '#aaa', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '1px' }}>Latest Booking</div>
+                      <div style={{ fontWeight: '600', color: 'white', marginBottom: '2px' }}>{latestBooking.title}</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--bms-muted)' }}>{new Date(latestBooking.show_time).toLocaleString('en-IN', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>
+                      <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                         <span style={{ fontSize: '0.7rem', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', background: latestBooking.status === 'Confirmed' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(245, 158, 11, 0.2)', color: latestBooking.status === 'Confirmed' ? '#4ade80' : '#fbbf24' }}>
+                           {latestBooking.status.toUpperCase()}
+                         </span>
+                         <span style={{ cursor: 'pointer', fontSize: '0.8rem', color: 'var(--bms-red)', fontWeight: '600' }} onClick={() => { navigate('/profile'); setShowDrawer(false); }}>View Details</span>
+                      </div>
+                    </div>
+                  )}
                   <div className="drawer-item" onClick={() => { navigate('/profile'); setShowDrawer(false); }}>My Profile & Bookings</div>
                   <div className="drawer-item" onClick={() => { navigate('/waitlist'); setShowDrawer(false); }}>Your Waitlists</div>
                   {user.role === 'admin' && (

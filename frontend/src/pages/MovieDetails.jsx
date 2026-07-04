@@ -78,19 +78,32 @@ const MovieDetails = () => {
           )}
 
           <div style={{ display: 'flex', gap: '1rem' }}>
-            <button
-              onClick={() => navigate(`/buytickets/${movie.movie_id}`)}
-              style={{
-                background: 'var(--bms-red)', color: 'white', border: 'none',
-                padding: '14px 3rem', borderRadius: '8px', fontSize: '1.1rem',
-                fontWeight: '700', cursor: 'pointer', boxShadow: '0 4px 15px rgba(248,68,100,0.4)',
-                transition: 'transform 0.2s'
-              }}
-              onMouseEnter={e => e.target.style.transform = 'scale(1.03)'}
-              onMouseLeave={e => e.target.style.transform = 'scale(1)'}
-            >
-              Book Tickets
-            </button>
+            {movie.release_date && new Date(movie.release_date) > new Date() ? (
+              <button
+                disabled
+                style={{
+                  background: 'rgba(255,255,255,0.1)', color: '#888', border: 'none',
+                  padding: '14px 3rem', borderRadius: '8px', fontSize: '1.1rem',
+                  fontWeight: '700', cursor: 'not-allowed', boxShadow: 'none'
+                }}
+              >
+                Releases on {new Date(movie.release_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </button>
+            ) : (
+              <button
+                onClick={() => navigate(`/buytickets/${movie.movie_id}`)}
+                style={{
+                  background: 'var(--bms-red)', color: 'white', border: 'none',
+                  padding: '14px 3rem', borderRadius: '8px', fontSize: '1.1rem',
+                  fontWeight: '700', cursor: 'pointer', boxShadow: '0 4px 15px rgba(248,68,100,0.4)',
+                  transition: 'transform 0.2s'
+                }}
+                onMouseEnter={e => e.target.style.transform = 'scale(1.03)'}
+                onMouseLeave={e => e.target.style.transform = 'scale(1)'}
+              >
+                Book Tickets
+              </button>
+            )}
             {movie.trailer_key && (
               <button
                 onClick={() => setTrailerKey(movie.trailer_key)}

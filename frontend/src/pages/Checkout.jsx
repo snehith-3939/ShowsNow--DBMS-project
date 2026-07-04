@@ -23,8 +23,8 @@ const PaymentModal = ({ total, onSuccess, onClose }) => {
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ background: 'white', width: '440px', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: 'var(--card-bg)', width: '440px', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)' }}>
         <div style={{ background: '#333545', color: 'white', padding: '1.2rem 1.5rem', display: 'flex', justifyContent: 'space-between' }}>
           <span style={{ fontWeight: '700' }}>Complete Payment — ₹{total.toFixed(2)}</span>
           <span onClick={onClose} style={{ cursor: 'pointer', opacity: 0.7 }}>✕</span>
@@ -33,17 +33,17 @@ const PaymentModal = ({ total, onSuccess, onClose }) => {
         <div style={{ display: 'flex', borderBottom: '1px solid #eee' }}>
           {[['upi', 'UPI'], ['card', 'Card'], ['netbanking', 'NetBanking']].map(([key, label]) => (
             <button key={key} onClick={() => setTab(key)}
-              style={{ flex: 1, padding: '12px', border: 'none', background: tab === key ? '#fff0f3' : 'white', borderBottom: tab === key ? '2px solid var(--bms-red)' : '2px solid transparent', color: tab === key ? 'var(--bms-red)' : '#555', fontWeight: tab === key ? '700' : '400', cursor: 'pointer', fontSize: '0.8rem' }}
+              style={{ flex: 1, padding: '12px', border: 'none', background: tab === key ? 'rgba(200, 169, 110, 0.1)' : 'transparent', borderBottom: tab === key ? '2px solid var(--bms-red)' : '2px solid transparent', color: tab === key ? 'var(--bms-red)' : 'var(--bms-muted)', fontWeight: tab === key ? '700' : '400', cursor: 'pointer', fontSize: '0.8rem' }}
             >{label}</button>
           ))}
         </div>
         <form onSubmit={handlePay} style={{ padding: '1.5rem' }}>
           {tab === 'upi' && (
             <div>
-              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', color: '#333' }}>Enter UPI ID</label>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', color: 'var(--bms-text)' }}>Enter UPI ID</label>
               <input value={upiId} onChange={e => setUpiId(e.target.value)} placeholder="yourname@upi"
-                required style={{ width: '100%', padding: '12px', border: '1px solid #ddd', borderRadius: '6px', marginBottom: '1rem', outline: 'none', fontSize: '1rem' }} />
-              <div style={{ background: '#f9f9f9', padding: '12px', borderRadius: '6px', fontSize: '0.8rem', color: '#666', marginBottom: '1rem' }}>
+                required style={{ width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: '6px', marginBottom: '1rem', outline: 'none', fontSize: '1rem' }} />
+              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '12px', borderRadius: '6px', fontSize: '0.8rem', color: 'var(--bms-muted)', marginBottom: '1rem' }}>
                 You will receive a payment request on your UPI app.
               </div>
             </div>
@@ -51,20 +51,20 @@ const PaymentModal = ({ total, onSuccess, onClose }) => {
           {tab === 'card' && (
             <div>
               <input value={cardNum} onChange={e => setCardNum(e.target.value)} placeholder="Card Number" required
-                style={{ width: '100%', padding: '12px', border: '1px solid #ddd', borderRadius: '6px', marginBottom: '10px', outline: 'none' }} />
+                style={{ width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: '6px', marginBottom: '10px', outline: 'none' }} />
               <div style={{ display: 'flex', gap: '10px' }}>
                 <input value={cardExpiry} onChange={e => setCardExpiry(e.target.value)} placeholder="MM/YY" required
-                  style={{ flex: 1, padding: '12px', border: '1px solid #ddd', borderRadius: '6px', outline: 'none' }} />
+                  style={{ flex: 1, padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: '6px', outline: 'none' }} />
                 <input value={cardCvv} onChange={e => setCardCvv(e.target.value)} placeholder="CVV" required
-                  style={{ flex: 1, padding: '12px', border: '1px solid #ddd', borderRadius: '6px', outline: 'none' }} />
+                  style={{ flex: 1, padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: '6px', outline: 'none' }} />
               </div>
             </div>
           )}
           {tab === 'netbanking' && (
             <div>
-              <label style={{ fontWeight: '500', display: 'block', marginBottom: '8px' }}>Select Bank</label>
+              <label style={{ fontWeight: '500', display: 'block', marginBottom: '8px', color: 'var(--bms-text)' }}>Select Bank</label>
               {['SBI', 'HDFC', 'ICICI', 'Axis', 'Kotak'].map(bank => (
-                <label key={bank} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', border: '1px solid #eee', borderRadius: '6px', marginBottom: '8px', cursor: 'pointer' }}>
+                <label key={bank} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: 'white', borderRadius: '6px', marginBottom: '8px', cursor: 'pointer' }}>
                   <input type="radio" name="bank" value={bank} required /> {bank} Bank
                 </label>
               ))}
@@ -176,21 +176,21 @@ const Checkout = () => {
   if (bookingSuccess) {
     const qrData = JSON.stringify({ bookingId, seats: selectedSeats.map(s => `${s.row_no}${s.seat_no}`), movie: showInfo?.title, cinema: showInfo?.cinema_name });
     return (
-      <div style={{ padding: '3rem', textAlign: 'center', background: '#f5f5f5', minHeight: '100vh' }}>
-        <div style={{ background: 'white', padding: '2.5rem', borderRadius: '12px', maxWidth: '520px', margin: '0 auto', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}>
+      <div style={{ padding: '3rem', textAlign: 'center', background: 'var(--bms-dark)', minHeight: '100vh', color: 'white' }}>
+        <div style={{ background: 'var(--card-bg)', padding: '2.5rem', borderRadius: '12px', maxWidth: '520px', margin: '0 auto', boxShadow: '0 4px 20px rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)' }}>
           <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>🎉</div>
           <h2 style={{ color: '#1ea83c', marginBottom: '0.5rem' }}>Booking Confirmed!</h2>
-          <p style={{ color: '#666', marginBottom: '2rem', fontSize: '0.9rem' }}>Show this QR code at the theatre entrance.</p>
+          <p style={{ color: 'var(--bms-muted)', marginBottom: '2rem', fontSize: '0.9rem' }}>Show this QR code at the theatre entrance.</p>
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '2rem' }}>
             <QRCodeSVG value={qrData} size={180} bgColor="#fff" fgColor="#333545" level="H" includeMargin />
           </div>
-          <div style={{ background: '#f9f9f9', padding: '1.5rem', borderRadius: '8px', textAlign: 'left', marginBottom: '1.5rem' }}>
-            {showInfo && <div style={{ marginBottom: '8px' }}><strong>Movie:</strong> {showInfo.title}</div>}
-            {showInfo && <div style={{ marginBottom: '8px' }}><strong>Cinema:</strong> {showInfo.cinema_name}</div>}
-            {showInfo && <div style={{ marginBottom: '8px' }}><strong>🕐 Time:</strong> {new Date(showInfo.show_time).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</div>}
-            <div style={{ marginBottom: '8px' }}><strong>💺 Seats:</strong> {selectedSeats.map(s => `${s.row_no}${s.seat_no}`).join(', ')}</div>
-            <div style={{ marginBottom: '8px' }}><strong>Total Paid:</strong> ₹{grandTotal.toFixed(2)}</div>
-            <div style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#aaa', marginTop: '10px' }}>Booking ID: {bookingId}</div>
+          <div style={{ background: 'rgba(255,255,255,0.05)', padding: '1.5rem', borderRadius: '8px', textAlign: 'left', marginBottom: '1.5rem', border: '1px solid rgba(255,255,255,0.05)' }}>
+            {showInfo && <div style={{ marginBottom: '8px' }}><strong>Movie:</strong> <span style={{color: 'var(--bms-muted)'}}>{showInfo.title}</span></div>}
+            {showInfo && <div style={{ marginBottom: '8px' }}><strong>Cinema:</strong> <span style={{color: 'var(--bms-muted)'}}>{showInfo.cinema_name}</span></div>}
+            {showInfo && <div style={{ marginBottom: '8px' }}><strong>🕐 Time:</strong> <span style={{color: 'var(--bms-muted)'}}>{new Date(showInfo.show_time).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span></div>}
+            <div style={{ marginBottom: '8px' }}><strong>💺 Seats:</strong> <span style={{color: 'var(--bms-muted)'}}>{selectedSeats.map(s => `${s.row_no}${s.seat_no}`).join(', ')}</span></div>
+            <div style={{ marginBottom: '8px' }}><strong>Total Paid:</strong> <span style={{color: 'var(--bms-muted)'}}>₹{grandTotal.toFixed(2)}</span></div>
+            <div style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'rgba(255,255,255,0.3)', marginTop: '10px' }}>Booking ID: {bookingId}</div>
           </div>
           <button onClick={() => navigate('/')} style={{ background: 'var(--bms-red)', color: 'white', border: 'none', padding: '12px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>← Back to Home</button>
         </div>
@@ -199,7 +199,7 @@ const Checkout = () => {
   }
 
   return (
-    <div style={{ padding: '2rem 4rem', background: '#f5f5f5', minHeight: '100vh', display: 'flex', gap: '2rem' }}>
+    <div style={{ padding: '2rem 4rem', background: 'var(--bms-dark)', minHeight: '100vh', display: 'flex', gap: '2rem', color: 'white' }}>
       {/* Left Column */}
       <div style={{ flex: 2 }}>
         {/* Show Info Banner */}
@@ -219,26 +219,26 @@ const Checkout = () => {
         )}
 
         {/* Snacks */}
-        <div style={{ background: 'white', padding: '1.5rem', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+        <div style={{ background: 'var(--card-bg)', padding: '1.5rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', boxShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
           <h2 style={{ marginBottom: '0.4rem' }}>🍿 Grab a Bite!</h2>
-          <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: '1.5rem' }}>Prebook your meal and skip the queue!</p>
+          <p style={{ color: 'var(--bms-muted)', fontSize: '0.85rem', marginBottom: '1.5rem' }}>Prebook your meal and skip the queue!</p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             {snacks.map(snack => (
-              <div key={snack.snack_id} style={{ border: '1px solid #eee', padding: '1rem', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div key={snack.snack_id} style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
-                  <div style={{ fontWeight: '600' }}>{snack.name}</div>
-                  <div style={{ color: '#666', fontSize: '0.85rem' }}>₹{parseFloat(snack.price).toFixed(2)}</div>
-                  {snack.description && <div style={{ color: '#aaa', fontSize: '0.75rem', marginTop: '2px' }}>{snack.description}</div>}
+                  <div style={{ fontWeight: '600', color: 'white' }}>{snack.name}</div>
+                  <div style={{ color: 'var(--bms-muted)', fontSize: '0.85rem' }}>₹{parseFloat(snack.price).toFixed(2)}</div>
+                  {snack.description && <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', marginTop: '2px' }}>{snack.description}</div>}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   {cartSnacks[snack.snack_id] ? (
                     <>
-                      <button onClick={() => removeSnack(snack.snack_id)} style={{ width: '28px', height: '28px', border: '1px solid var(--bms-red)', color: 'var(--bms-red)', background: 'white', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>−</button>
+                      <button onClick={() => removeSnack(snack.snack_id)} style={{ width: '28px', height: '28px', border: '1px solid var(--bms-red)', color: 'var(--bms-red)', background: 'transparent', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>−</button>
                       <span style={{ minWidth: '16px', textAlign: 'center', fontWeight: 'bold' }}>{cartSnacks[snack.snack_id]}</span>
-                      <button onClick={() => addSnack(snack.snack_id)} style={{ width: '28px', height: '28px', background: 'var(--bms-red)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>+</button>
+                      <button onClick={() => addSnack(snack.snack_id)} style={{ width: '28px', height: '28px', background: 'var(--bms-red)', color: '#0A0A0A', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>+</button>
                     </>
                   ) : (
-                    <button onClick={() => addSnack(snack.snack_id)} style={{ padding: '6px 14px', border: '1px solid var(--bms-red)', color: 'var(--bms-red)', background: 'white', borderRadius: '4px', cursor: 'pointer', fontWeight: '600' }}>Add</button>
+                    <button onClick={() => addSnack(snack.snack_id)} style={{ padding: '6px 14px', border: '1px solid var(--bms-red)', color: 'var(--bms-red)', background: 'transparent', borderRadius: '4px', cursor: 'pointer', fontWeight: '600' }}>Add</button>
                   )}
                 </div>
               </div>
@@ -250,32 +250,32 @@ const Checkout = () => {
 
       {/* Right Column — Booking Summary */}
       <div style={{ flex: 1 }}>
-        <div style={{ background: 'white', padding: '1.5rem', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', position: 'sticky', top: '20px' }}>
-          <h2 style={{ marginBottom: '1.5rem', borderBottom: '1px solid #eee', paddingBottom: '1rem' }}>Booking Summary</h2>
+        <div style={{ background: 'var(--card-bg)', border: '1px solid rgba(255,255,255,0.05)', padding: '1.5rem', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.5)', position: 'sticky', top: '90px' }}>
+          <h2 style={{ marginBottom: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '1rem', color: 'white' }}>Booking Summary</h2>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '1rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#555' }}>{selectedSeats.length} × Ticket(s)</span>
-              <span>₹{totalTicketPrice.toFixed(2)}</span>
+              <span style={{ color: 'var(--bms-muted)' }}>{selectedSeats.length} × Ticket(s)</span>
+              <span style={{ color: 'white' }}>₹{totalTicketPrice.toFixed(2)}</span>
             </div>
             {snacksTotal > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#555' }}>Food & Beverages</span>
-                <span>₹{snacksTotal.toFixed(2)}</span>
+                <span style={{ color: 'var(--bms-muted)' }}>Food & Beverages</span>
+                <span style={{ color: 'white' }}>₹{snacksTotal.toFixed(2)}</span>
               </div>
             )}
-            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#888', fontSize: '0.85rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem' }}>
               <span>Convenience Fee</span>
               <span>₹{convenienceFee.toFixed(2)}</span>
             </div>
             
             {user && loyaltyBalance > 0 && (
-              <div style={{ background: '#f8f9fa', padding: '12px', borderRadius: '6px', marginTop: '8px', border: '1px solid #e9ecef' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', margin: 0, fontWeight: '600', color: '#333' }}>
+              <div style={{ background: 'rgba(200, 169, 110, 0.1)', padding: '12px', borderRadius: '6px', marginTop: '8px', border: '1px solid rgba(200, 169, 110, 0.3)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', margin: 0, fontWeight: '600', color: 'white' }}>
                   <input type="checkbox" checked={applyPoints} onChange={(e) => setApplyPoints(e.target.checked)} style={{ width: '16px', height: '16px', accentColor: 'var(--bms-red)' }} />
                   Apply Loyalty Points
                 </label>
-                <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '4px', paddingLeft: '24px' }}>
+                <div style={{ fontSize: '0.8rem', color: 'var(--bms-muted)', marginTop: '4px', paddingLeft: '24px' }}>
                   You have <strong style={{color: 'var(--bms-red)'}}>{loyaltyBalance}</strong> points. Value: up to ₹{Math.min(loyaltyBalance * 0.10, 100, totalTicketPrice + snacksTotal).toFixed(2)} off.
                 </div>
               </div>
@@ -288,18 +288,18 @@ const Checkout = () => {
               </div>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#888', fontSize: '0.85rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem' }}>
               <span>GST (18%)</span>
               <span>₹{tax.toFixed(2)}</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '700', fontSize: '1.2rem', borderTop: '1px solid #eee', paddingTop: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '700', fontSize: '1.2rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '12px', color: 'white' }}>
               <span>Total</span>
               <span>₹{grandTotal.toFixed(2)}</span>
             </div>
           </div>
 
           {!user && (
-            <div style={{ background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '6px', padding: '10px', fontSize: '0.8rem', color: '#856404', marginBottom: '1rem' }}>
+            <div style={{ background: 'rgba(200, 169, 110, 0.1)', border: '1px solid var(--bms-red)', borderRadius: '6px', padding: '10px', fontSize: '0.8rem', color: 'var(--bms-red)', marginBottom: '1rem' }}>
               You must be logged in to complete the booking.
             </div>
           )}
@@ -313,16 +313,16 @@ const Checkout = () => {
 
       {/* Auth Prompt Modal — shown when user tries to pay without logging in */}
       {showAuthPrompt && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: 'white', padding: '2rem', borderRadius: '12px', width: '380px', textAlign: 'center' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'var(--card-bg)', border: '1px solid rgba(255,255,255,0.1)', padding: '2rem', borderRadius: '12px', width: '380px', textAlign: 'center', color: 'white' }}>
             <div style={{ fontSize: '2.5rem', marginBottom: '1rem', height: '2.5rem' }}></div>
             <h3 style={{ marginBottom: '0.5rem' }}>Login Required</h3>
-            <p style={{ color: '#666', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+            <p style={{ color: 'var(--bms-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
               You need to be logged in to complete your booking.
             </p>
             <button
               onClick={() => { setShowAuthPrompt(false); }}
-              style={{ padding: '10px 24px', background: '#f0f0f0', color: '#333', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600', marginRight: '10px' }}
+              style={{ padding: '10px 24px', background: 'rgba(255,255,255,0.1)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600', marginRight: '10px' }}
             >
               Cancel
             </button>

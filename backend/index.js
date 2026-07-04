@@ -1216,6 +1216,11 @@ Return ONLY valid JSON with these EXACT fields:
       params.push(`%${intent.movie_title}%`);
       paramIdx++;
     }
+    if (intent.cinema_name) {
+      sql += ` AND c.name ILIKE $${paramIdx}`;
+      params.push(`%${intent.cinema_name}%`);
+      paramIdx++;
+    }
 
     sql += ` ORDER BY `;
     const orderClauses = [];
@@ -1246,6 +1251,30 @@ Return ONLY valid JSON with these EXACT fields:
         message: 'I found a few movies playing. Which one would you like?',
         options: uniqueMovies.slice(0, 4),
         context: { ...intent, clarification_field: 'movie_title' }
+      });
+    }
+
+    const uniqueCinemas = [...new Set(showRes.rows.map(r => r.cinema_name))];
+    if (!intent.cinema_name && uniqueCinemas.length > 1) {
+      return res.json({
+        type: 'clarify',
+        message: `I found shows at multiple cinemas. Which one do you prefer?`,
+        options: uniqueCinemas.slice(0, 4),
+        context: { ...intent, clarification_field: 'cinema_name', movie_title: uniqueMovies[0] }
+      });
+    }
+
+    const uniqueTimes = [...new Set(showRes.rows.map(r => {
+      const d = new Date(r.show_time);
+      return `${d.getHours() % 12 || 12}:${d.getMinutes().toString().padStart(2, '0')} ${d.getHours() >= 12 ? 'pm' : 'am'}`;
+    }))];
+    
+    if (!intent.time_of_day && uniqueTimes.length > 1) {
+      return res.json({
+        type: 'clarify',
+        message: `I found multiple showtimes. Which time works best?`,
+        options: uniqueTimes.slice(0, 4),
+        context: { ...intent, clarification_field: 'time_of_day', movie_title: uniqueMovies[0], cinema_name: uniqueCinemas[0] }
       });
     }
 
