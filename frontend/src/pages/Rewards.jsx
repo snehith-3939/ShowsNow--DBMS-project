@@ -10,7 +10,7 @@ const Rewards = () => {
 
   useEffect(() => {
     if (user) {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('bms_token');
       if (token) {
         fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/user/loyalty', {
           headers: { 'Authorization': `Bearer ${token}` }
