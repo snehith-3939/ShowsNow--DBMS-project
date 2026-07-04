@@ -38,38 +38,38 @@ const Waitlist = () => {
   if (error) return <div style={{ padding: '4rem', textAlign: 'center', color: 'red' }}>Error: {error}</div>;
 
   return (
-    <div style={{ padding: '2rem 4rem', maxWidth: '1000px', margin: '0 auto' }}>
+    <div style={{ padding: '4rem', maxWidth: '1000px', margin: '0 auto', color: 'white', minHeight: '100vh' }}>
       <h1 style={{ marginBottom: '2rem' }}>My Waitlists</h1>
       
       {waitlist.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '3rem', background: '#f5f5f5', borderRadius: '12px' }}>
-          <h3>No active waitlists</h3>
-          <p>You aren't queued up for any sold-out movies.</p>
+        <div style={{ textAlign: 'center', padding: '3rem', background: '#1a1c23', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <h3 style={{ color: 'white' }}>No active waitlists</h3>
+          <p style={{ color: 'var(--bms-muted)' }}>You aren't queued up for any sold-out movies.</p>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {waitlist.map(w => (
-            <div key={w.waitlist_id} style={{ display: 'flex', border: '1px solid #eee', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
+            <div key={w.waitlist_id} style={{ display: 'flex', background: '#1a1c23', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
               {w.poster_url && (
-                <img src={w.poster_url} alt={w.title} style={{ width: '120px', objectFit: 'cover' }} />
+                <img src={w.poster_url} alt={w.title} style={{ width: '140px', objectFit: 'cover' }} />
               )}
               <div style={{ padding: '1.5rem', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                <h2 style={{ margin: '0 0 0.5rem 0' }}>{w.title}</h2>
-                <div style={{ color: '#666', fontSize: '0.95rem', marginBottom: '0.5rem' }}>
+                <h2 style={{ margin: '0 0 0.5rem 0', color: 'white' }}>{w.title}</h2>
+                <div style={{ color: 'var(--bms-muted)', fontSize: '0.95rem', marginBottom: '0.5rem' }}>
                   <strong>{w.cinema_name}</strong>
                 </div>
-                <div style={{ color: '#444', marginBottom: '1rem' }}>
+                <div style={{ color: 'var(--bms-muted)', marginBottom: '1rem' }}>
                   Showtime: {new Date(w.show_time).toLocaleString()}
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontWeight: '500', fontSize: '0.95rem' }}>Requested: {w.requested_seats} Seats</span>
+                  <span style={{ fontWeight: '500', fontSize: '0.95rem', color: 'white' }}>Requested: {w.requested_seats} Seats</span>
                   <span style={{ 
                     padding: '4px 12px', 
                     borderRadius: '20px', 
                     fontSize: '0.85rem', 
                     fontWeight: 'bold',
-                    background: w.status === 'Auto-Booked' ? '#d4edda' : w.status === 'Waiting' ? '#cce5ff' : '#e2e3e5',
-                    color: w.status === 'Auto-Booked' ? '#155724' : w.status === 'Waiting' ? '#004085' : '#383d41'
+                    background: w.status === 'Auto-Booked' ? 'rgba(34, 197, 94, 0.2)' : w.status === 'Waiting' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.1)',
+                    color: w.status === 'Auto-Booked' ? '#4ade80' : w.status === 'Waiting' ? '#60a5fa' : '#aaa'
                   }}>
                     {w.status}
                   </span>

@@ -110,6 +110,33 @@ const Rewards = () => {
           )}
         </div>
 
+        {/* Tier Structure Info */}
+        <div style={{ background: '#1a1c23', padding: '2rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '4rem' }}>
+          <h2 style={{ fontSize: '1.4rem', marginBottom: '1.5rem', color: 'white' }}>How Tiers Work</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem' }}>
+            <div style={{ padding: '1rem', background: 'rgba(205, 127, 50, 0.1)', border: '1px solid rgba(205, 127, 50, 0.3)', borderRadius: '8px' }}>
+              <h3 style={{ color: '#cd7f32', marginBottom: '0.5rem' }}>Bronze</h3>
+              <p style={{ color: '#aaa', fontSize: '0.9rem', margin: 0 }}>0 - 499 Points</p>
+              <p style={{ color: '#888', fontSize: '0.8rem', marginTop: '0.5rem' }}>Entry level member</p>
+            </div>
+            <div style={{ padding: '1rem', background: 'rgba(192, 192, 192, 0.1)', border: '1px solid rgba(192, 192, 192, 0.3)', borderRadius: '8px' }}>
+              <h3 style={{ color: '#C0C0C0', marginBottom: '0.5rem' }}>Silver</h3>
+              <p style={{ color: '#aaa', fontSize: '0.9rem', margin: 0 }}>500 - 999 Points</p>
+              <p style={{ color: '#888', fontSize: '0.8rem', marginTop: '0.5rem' }}>1.2x points multiplier</p>
+            </div>
+            <div style={{ padding: '1rem', background: 'rgba(255, 215, 0, 0.1)', border: '1px solid rgba(255, 215, 0, 0.3)', borderRadius: '8px' }}>
+              <h3 style={{ color: '#FFD700', marginBottom: '0.5rem' }}>Gold</h3>
+              <p style={{ color: '#aaa', fontSize: '0.9rem', margin: 0 }}>1,000 - 1,999 Points</p>
+              <p style={{ color: '#888', fontSize: '0.8rem', marginTop: '0.5rem' }}>1.5x points multiplier + Free upgrades</p>
+            </div>
+            <div style={{ padding: '1rem', background: 'rgba(229, 228, 226, 0.1)', border: '1px solid rgba(229, 228, 226, 0.3)', borderRadius: '8px' }}>
+              <h3 style={{ color: '#e5e4e2', marginBottom: '0.5rem' }}>Platinum</h3>
+              <p style={{ color: '#aaa', fontSize: '0.9rem', margin: 0 }}>2,000+ Points</p>
+              <p style={{ color: '#888', fontSize: '0.8rem', marginTop: '0.5rem' }}>2.0x points + VIP Lounge access</p>
+            </div>
+          </div>
+        </div>
+
         {/* Rewards Catalog */}
         <h2 style={{ fontSize: '1.5rem', marginBottom: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '10px' }}>Rewards Catalog</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem' }}>

@@ -10,7 +10,7 @@ const Profile = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('bms_token');
     if (!token) {
       navigate('/');
       return;
