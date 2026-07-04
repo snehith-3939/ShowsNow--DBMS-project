@@ -10,11 +10,30 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? null : 'fallback_secret_change_me');
 const HOLD_MINUTES = 10;
 const PAYMENT_METHODS = new Set(['Demo', 'UPI', 'Card', 'NetBanking', 'Wallet', 'Cash']);
 
-app.use(cors());
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET must be set in production');
+}
+
+const configuredOrigins = [
+  process.env.FRONTEND_URL,
+  process.env.VERCEL_URL && `https://${process.env.VERCEL_URL}`,
+  ...(process.env.CORS_ORIGINS || '').split(','),
+].filter(Boolean).map(origin => origin.trim().replace(/\/$/, ''));
+const devOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
+const allowedOrigins = new Set([...configuredOrigins, ...devOrigins]);
+
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.has(origin.replace(/\/$/, ''))) {
+      return callback(null, true);
+    }
+    return callback(new Error('Not allowed by CORS'));
+  },
+}));
 app.use(express.json());
 
 const isUuid = (value) =>
@@ -27,6 +46,151 @@ async function logAdminAction(db, adminId, action, entityType, entityId, details
      VALUES ($1, $2, $3, $4, $5::jsonb)`,
     [adminId, action, entityType, entityId || null, JSON.stringify(details)]
   );
+}
+
+const loyaltyBalanceSql = `
+  SELECT COALESCE(SUM(
+    CASE
+      WHEN points_earned > 0
+        AND (expires_at IS NULL OR expires_at > NOW())
+        AND ($2::timestamp IS NULL OR created_at <= $2::timestamp)
+      THEN points_earned
+      ELSE 0
+    END - points_spent
+  ), 0) AS balance
+  FROM loyalty_ledger
+  WHERE user_id = $1
+`;
+
+async function lockUserLoyaltyLedger(db, userId) {
+  await db.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`loyalty:${userId}`]);
+}
+
+async function getLoyaltyBalance(db, userId, earnedBefore = null) {
+  const result = await db.query(loyaltyBalanceSql, [userId, earnedBefore]);
+  return parseInt(result.rows[0].balance, 10) || 0;
+}
+
+const BOT_OUT_OF_SCOPE_MESSAGE = 'I can only help with booking movie tickets on ShowsNow. Try asking me to find a movie, showtime, seats, or snacks.';
+const BOOKING_INTENT_PATTERN = /\b(book|booking|ticket|tickets|tix|movie|movies|show|shows|showtime|showtimes|cinema|cinemas|seat|seats|watch|playing|popcorn|snack|snacks|coke|pepsi|nachos)\b/i;
+const CITY_ALIASES = new Map([
+  ['bombay', 'Mumbai'],
+  ['mumbai', 'Mumbai'],
+  ['delhi', 'Delhi'],
+  ['new delhi', 'Delhi'],
+  ['bangalore', 'Bengaluru'],
+  ['bengaluru', 'Bengaluru'],
+  ['blr', 'Bengaluru'],
+  ['hyderabad', 'Hyderabad'],
+  ['hyd', 'Hyderabad'],
+  ['chennai', 'Chennai'],
+  ['madras', 'Chennai'],
+  ['pune', 'Pune'],
+  ['kolkata', 'Kolkata'],
+  ['calcutta', 'Kolkata'],
+  ['ahmedabad', 'Ahmedabad'],
+]);
+
+function hasBookingIntent(prompt = '') {
+  return BOOKING_INTENT_PATTERN.test(prompt);
+}
+
+async function extractLocalBookingIntent(promptText) {
+  const lowerPrompt = promptText.toLowerCase();
+  const intent = {};
+  let extractedSomething = false;
+
+  const numMatch = lowerPrompt.match(/(\d+)\s*(?:ticket|tickets|tix)/i) ||
+    lowerPrompt.match(/(?:for\s+)?(\d+)\s*(?:people|person|of us)/i);
+  if (numMatch) {
+    intent.quantity = parseInt(numMatch[1], 10);
+    extractedSomething = true;
+  } else if (/\b(one|alone|myself)\b/.test(lowerPrompt) || /\bme\b/.test(lowerPrompt)) {
+    intent.quantity = 1;
+    extractedSomething = true;
+  } else if (lowerPrompt.includes('two')) {
+    intent.quantity = 2;
+    extractedSomething = true;
+  } else if (lowerPrompt.includes('three')) {
+    intent.quantity = 3;
+    extractedSomething = true;
+  } else if (lowerPrompt.includes('four')) {
+    intent.quantity = 4;
+    extractedSomething = true;
+  }
+
+  for (const [alias, city] of [...CITY_ALIASES.entries()].sort((a, b) => b[0].length - a[0].length)) {
+    if (lowerPrompt.includes(alias)) {
+      intent.city = city;
+      extractedSomething = true;
+      break;
+    }
+  }
+
+  const timeMatch = lowerPrompt.match(/(\d+)(?::\d+)?\s*(am|pm)/i);
+  if (timeMatch) {
+    intent.time_of_day = timeMatch[0];
+    extractedSomething = true;
+  } else if (lowerPrompt.includes('tonight')) {
+    intent.time_of_day = 'tonight';
+    extractedSomething = true;
+  } else if (lowerPrompt.includes('morning')) {
+    intent.time_of_day = 'morning';
+    extractedSomething = true;
+  } else if (lowerPrompt.includes('afternoon')) {
+    intent.time_of_day = 'afternoon';
+    extractedSomething = true;
+  } else if (lowerPrompt.includes('evening')) {
+    intent.time_of_day = 'evening';
+    extractedSomething = true;
+  } else if (lowerPrompt.includes('night')) {
+    intent.time_of_day = 'night';
+    extractedSomething = true;
+  }
+
+  const snacks = ['popcorn', 'coke', 'pepsi', 'nachos', 'water', 'coffee', 'fries', 'burger', 'tea'];
+  for (const snack of snacks) {
+    if (lowerPrompt.includes(snack)) {
+      intent.snack = snack;
+      extractedSomething = true;
+      break;
+    }
+  }
+
+  const genres = ['action', 'comedy', 'drama', 'horror', 'romance', 'thriller', 'sci-fi', 'science fiction', 'animation'];
+  for (const genre of genres) {
+    if (lowerPrompt.includes(genre)) {
+      intent.genre = genre === 'science fiction' ? 'sci-fi' : genre;
+      extractedSomething = true;
+      break;
+    }
+  }
+
+  const moviesRes = await query('SELECT title FROM movies ORDER BY title');
+  const movieMatches = [];
+  const promptWords = new Set(lowerPrompt.split(/[^a-z0-9]+/).filter(word => word.length >= 3));
+  for (const movie of moviesRes.rows) {
+    const title = movie.title.toLowerCase();
+    const titleWords = title.split(/[^a-z0-9]+/).filter(word => word.length >= 3);
+    if (lowerPrompt.includes(title)) {
+      movieMatches.push(movie.title);
+    } else if (titleWords.length > 0 && titleWords.every(word => promptWords.has(word))) {
+      movieMatches.push(movie.title);
+    } else if (titleWords.length === 1 && promptWords.has(titleWords[0])) {
+      movieMatches.push(movie.title);
+    }
+  }
+
+  const uniqueMovieMatches = [...new Set(movieMatches)];
+  if (uniqueMovieMatches.length === 1) {
+    intent.movie_title = uniqueMovieMatches[0];
+    extractedSomething = true;
+  } else if (uniqueMovieMatches.length > 1) {
+    intent.movie_options = uniqueMovieMatches.slice(0, 5);
+    extractedSomething = true;
+  }
+
+  return { intent, extractedSomething };
 }
 
 // ---------------------------------------------------------
@@ -157,6 +321,21 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
   }
 });
 
+// GET /api/user/profile — current user's profile details
+app.get('/api/user/profile', authenticateToken, async (req, res) => {
+  try {
+    const result = await query(
+      'SELECT user_id, name, email, phone, city, role, created_at FROM users WHERE user_id = $1',
+      [req.user.user_id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found.' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not fetch profile.' });
+  }
+});
+
 // PUT /api/user/profile — update current user's profile details
 app.put('/api/user/profile', authenticateToken, async (req, res) => {
   const { name, phone, city } = req.body;
@@ -216,12 +395,8 @@ app.get('/api/user/bookings', authenticateToken, async (req, res) => {
 // GET /api/user/loyalty — user's loyalty point balance
 app.get('/api/user/loyalty', authenticateToken, async (req, res) => {
   try {
-    const result = await query(`
-      SELECT COALESCE(SUM(points_earned - points_spent), 0) as balance
-      FROM loyalty_ledger
-      WHERE user_id = $1 AND expires_at > NOW()
-    `, [req.user.user_id]);
-    res.json({ balance: parseInt(result.rows[0].balance) || 0 });
+    const balance = await getLoyaltyBalance({ query }, req.user.user_id);
+    res.json({ balance });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch loyalty balance' });
@@ -860,13 +1035,13 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
     // 5. Apply Loyalty Points
     let pointsToSpend = 0;
     if (applyPoints) {
-      const loyaltyRes = await client.query(`
-        SELECT SUM(points_earned - points_spent) as balance
-        FROM loyalty_ledger
-        WHERE user_id = $1 AND expires_at > NOW()
-      `, [user_id]);
-      
-      const balance = parseInt(loyaltyRes.rows[0].balance) || 0;
+      const redeemableAtRes = await client.query('SELECT clock_timestamp() AS redeemable_at');
+      const redeemableAt = redeemableAtRes.rows[0].redeemable_at;
+      await lockUserLoyaltyLedger(client, user_id);
+      const balance = await getLoyaltyBalance(client, user_id, redeemableAt);
+      if (balance <= 0) {
+        throw new Error('Not enough loyalty points');
+      }
       if (balance > 0) {
         const POINTS_MULTIPLIER = 0.10; // 50 points = 5 rupees
         const MAX_DISCOUNT_RUPEES = 100; 
@@ -876,6 +1051,9 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
         
         if (actualDiscount > 0) {
           pointsToSpend = Math.ceil(actualDiscount / POINTS_MULTIPLIER);
+          if (pointsToSpend > balance) {
+            throw new Error('Not enough loyalty points');
+          }
           totalAmount -= actualDiscount;
         }
       }
@@ -891,7 +1069,7 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
     // Insert Spent Points into Ledger
     if (pointsToSpend > 0) {
       await client.query(
-        'INSERT INTO loyalty_ledger (user_id, booking_id, points_spent, expires_at) VALUES ($1, $2, $3, NOW())',
+        'INSERT INTO loyalty_ledger (user_id, booking_id, points_spent, expires_at) VALUES ($1, $2, $3, NULL)',
         [user_id, bookingId, pointsToSpend]
       );
     }
@@ -940,7 +1118,7 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
     if (err.code === '23505') {
       return res.status(409).json({ error: 'One or more selected seats were just booked. Please choose different seats.' });
     }
-    if (/booked|held|available/i.test(err.message)) {
+    if (/booked|held|available|loyalty points/i.test(err.message)) {
       return res.status(409).json({ error: err.message });
     }
     res.status(500).json({ error: 'Booking failed. Please try again.' });
@@ -1135,105 +1313,91 @@ app.post('/api/bookings/:id/cancel', authenticateToken, async (req, res) => {
   }
 });
 
-// Autonomous NLP Agent Booking API — powered by Hugging Face LLM
+// Autonomous booking assistant. Uses Gemini for extraction when configured,
+// with a deterministic local parser and hard out-of-scope boundary.
 app.post('/api/autonomous-agent', authenticateToken, async (req, res) => {
   try {
     const { prompt, context } = req.body;
-    let intent = context ? { ...context } : {};
+    const promptText = typeof prompt === 'string' ? prompt.trim() : '';
+    if (!promptText && !context) {
+      return res.json({ type: 'out_of_scope', message: BOT_OUT_OF_SCOPE_MESSAGE });
+    }
 
-    if (prompt && !context?.clarification_field) {
-      const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-      const systemInstruction = `You are a movie booking assistant. Extract booking intent from the user message.
+    let intent = context ? { ...context } : {};
+    const clarificationField = context?.clarification_field;
+
+    if (promptText) {
+      const lowerPrompt = promptText.toLowerCase();
+      if (lowerPrompt.includes('start over') || lowerPrompt.includes('cancel')) {
+        intent = {};
+      }
+
+      if (!clarificationField) {
+        const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+        const systemInstruction = `You are a movie booking assistant. Extract booking intent from the user message.
 Return ONLY valid JSON with these EXACT fields:
 - "movie_title": string or null
 - "city": string or null
-- "quantity": number (default 2, but if user says "me", "myself", "alone", or "one", set to 1)
+- "quantity": number or null
 - "snack": string or null
 - "genre": string or null
-- "time_of_day": string or null`;
+- "time_of_day": string or null
+- "cinema_name": string or null`;
 
-      if (GEMINI_API_KEY && GEMINI_API_KEY !== 'your_gemini_api_key_here') {
-        try {
-          const { GoogleGenerativeAI } = require('@google/generative-ai');
-          const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-          const model = genAI.getGenerativeModel({
-            model: 'gemini-1.5-flash',
-            systemInstruction,
-            generationConfig: { responseMimeType: "application/json", temperature: 0.1 }
-          });
-          const result = await model.generateContent(prompt);
-          intent = { ...intent, ...JSON.parse(result.response.text()) };
-        } catch (e) { console.warn(e.message); }
-      }
-
-      // Reset intent if user asks to start over or what movies are available
-      if (prompt) {
-        const lp = prompt.toLowerCase();
-        if (lp.includes('start over') || lp.includes('cancel') || lp.includes('what movies') || lp.includes('which movies') || lp.includes('show movies')) {
-          intent = { city: intent.city };
+        if (GEMINI_API_KEY && GEMINI_API_KEY !== 'your_gemini_api_key_here') {
+          try {
+            const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+            const model = genAI.getGenerativeModel({
+              model: 'gemini-1.5-flash',
+              systemInstruction,
+              generationConfig: { responseMimeType: 'application/json', temperature: 0.1 }
+            });
+            const result = await model.generateContent(promptText);
+            intent = { ...intent, ...JSON.parse(result.response.text()) };
+          } catch (e) {
+            console.warn('Gemini intent extraction failed:', e.message);
+          }
         }
       }
 
-      // Local NLP Fallback (If LLM is unavailable or API key missing)
-      let extractedSomething = false;
-      if (Object.keys(intent).length === 0 || (!intent.movie_title && !intent.city && !intent.time_of_day) || context?.clarification_field) {
-        const lowerPrompt = prompt.toLowerCase();
-        
-        // 1. Extract Quantity
-        const numMatch = lowerPrompt.match(/(\d+)\s*ticket/i) || lowerPrompt.match(/(?:for\s+)?(\d+)\s*(?:people|person|of us)/i);
-        if (numMatch) { intent.quantity = parseInt(numMatch[1]); extractedSomething = true; }
-        else if (lowerPrompt.includes('one') || lowerPrompt.includes('alone') || lowerPrompt.match(/\bme\b/) || lowerPrompt.includes('myself')) { intent.quantity = 1; extractedSomething = true; }
-        else if (lowerPrompt.includes('two')) { intent.quantity = 2; extractedSomething = true; }
-        else if (lowerPrompt.includes('three')) { intent.quantity = 3; extractedSomething = true; }
-        else if (lowerPrompt.includes('four')) { intent.quantity = 4; extractedSomething = true; }
-        
-        // 2. Extract City
-        const cities = ['mumbai', 'delhi', 'bengaluru', 'hyderabad', 'chennai', 'pune', 'kolkata', 'ahmedabad'];
-        for (const c of cities) {
-           if (lowerPrompt.includes(c)) { intent.city = c.charAt(0).toUpperCase() + c.slice(1); extractedSomething = true; break; }
-        }
-
-        // 3. Extract Time
-        const timeMatch = lowerPrompt.match(/(\d+)(?::\d+)?\s*(am|pm)/i);
-        if (timeMatch) { intent.time_of_day = timeMatch[0]; extractedSomething = true; }
-        else if (lowerPrompt.includes('tonight')) { intent.time_of_day = 'tonight'; extractedSomething = true; }
-        else if (lowerPrompt.includes('morning')) { intent.time_of_day = 'morning'; extractedSomething = true; }
-        else if (lowerPrompt.includes('evening')) { intent.time_of_day = 'evening'; extractedSomething = true; }
-        else if (lowerPrompt.includes('night')) { intent.time_of_day = 'night'; extractedSomething = true; }
-        else if (lowerPrompt.includes('afternoon')) { intent.time_of_day = 'afternoon'; extractedSomething = true; }
-
-        // 4. Extract Snacks
-        const snacks = ['popcorn', 'coke', 'pepsi', 'nachos', 'water', 'coffee', 'fries', 'burger', 'tea'];
-        for (const s of snacks) {
-           if (lowerPrompt.includes(s)) { intent.snack = s; extractedSomething = true; break; }
-        }
-
-        // 5. Extract Movie Title (Query DB)
-        const { query } = require('./db');
-        const moviesRes = await query('SELECT title FROM movies');
-        for (const m of moviesRes.rows) {
-           if (lowerPrompt.includes(m.title.toLowerCase())) {
-             intent.movie_title = m.title;
-             extractedSomething = true;
-             break;
-           }
-        }
+      const local = await extractLocalBookingIntent(promptText);
+      const meaningfulLocalIntent = Boolean(
+        local.intent.movie_title ||
+        local.intent.movie_options ||
+        local.intent.city ||
+        local.intent.time_of_day ||
+        local.intent.snack ||
+        local.intent.genre
+      );
+      const promptIsInScope = hasBookingIntent(promptText) || meaningfulLocalIntent || Boolean(clarificationField);
+      if (!promptIsInScope) {
+        return res.json({ type: 'out_of_scope', message: BOT_OUT_OF_SCOPE_MESSAGE });
       }
-      
-      intent.quantity = Math.min(Math.max(parseInt(intent.quantity) || 2, 1), 10);
-      
-      // If clarification field exists, and the user didn't type a reset command, and NLP didn't extract a new movie/city/time
-      if (prompt && context?.clarification_field && !extractedSomething) {
-        const lp = prompt.toLowerCase();
-        if (!lp.includes('start over') && !lp.includes('cancel') && !lp.includes('what movies') && !lp.includes('which movies')) {
-          intent[context.clarification_field] = prompt;
-        }
+
+      if (local.intent.movie_options?.length > 1 && !local.intent.movie_title) {
+        return res.json({
+          type: 'clarify',
+          message: 'I found more than one matching movie. Which one did you mean?',
+          options: local.intent.movie_options,
+          context: { ...intent, movie_options: undefined, clarification_field: 'movie_title' }
+        });
       }
+
+      if (clarificationField && !local.extractedSomething) {
+        intent[clarificationField] = promptText;
+      } else {
+        delete intent.clarification_field;
+      }
+      delete local.intent.movie_options;
+      intent = { ...intent, ...local.intent };
+    }
+
+    intent.quantity = Math.min(Math.max(parseInt(intent.quantity, 10) || 2, 1), 10);
 
     if (!intent.city) {
       return res.json({
         type: 'clarify',
-        message: 'Which city are you looking to watch this in?',
+        message: 'Which city should I search in?',
         options: ['Mumbai', 'Delhi', 'Bengaluru', 'Hyderabad', 'Chennai', 'Pune'],
         context: { ...intent, clarification_field: 'city' }
       });
@@ -1241,10 +1405,10 @@ Return ONLY valid JSON with these EXACT fields:
 
     let timeStr = null;
     if (intent.time_of_day) {
-      const t = intent.time_of_day.toLowerCase();
+      const t = String(intent.time_of_day).toLowerCase();
       const specificTime = t.match(/(\d+)(?::\d+)?\s*(am|pm)/i);
       if (specificTime) {
-        let hour = parseInt(specificTime[1]);
+        let hour = parseInt(specificTime[1], 10);
         if (specificTime[2].toLowerCase() === 'pm' && hour < 12) hour += 12;
         if (specificTime[2].toLowerCase() === 'am' && hour === 12) hour = 0;
         timeStr = `${hour.toString().padStart(2, '0')}:00`;
@@ -1254,10 +1418,9 @@ Return ONLY valid JSON with these EXACT fields:
       else if (t === 'night') timeStr = '20:00';
     }
 
-    const { query } = require('./db');
     const params = [];
     let sql = `
-      SELECT 
+      SELECT
         s.show_id, s.show_time, s.base_price, s.surge_multiplier, s.available_seats,
         m.title, m.poster_url, m.genre,
         c.name as cinema_name, c.city,
@@ -1286,7 +1449,6 @@ Return ONLY valid JSON with these EXACT fields:
       paramIdx++;
     }
 
-    sql += ` ORDER BY `;
     const orderClauses = [];
     if (intent.genre) {
       orderClauses.push(`(CASE WHEN m.genre ILIKE $${paramIdx} THEN 0 ELSE 1 END) ASC`);
@@ -1298,14 +1460,14 @@ Return ONLY valid JSON with these EXACT fields:
       params.push(timeStr);
       paramIdx++;
     }
-    orderClauses.push(`m.vote_average DESC`, `s.show_time ASC`);
-    sql += orderClauses.join(', ') + ` LIMIT 5`;
+    orderClauses.push('m.vote_average DESC', 's.show_time ASC');
+    sql += ` ORDER BY ${orderClauses.join(', ')} LIMIT 5`;
 
     const showRes = await query(sql, params);
 
     if (showRes.rows.length === 0) {
-      const hint = intent.movie_title || intent.genre || 'any movie';
-      return res.json({ type: 'error', message: `No shows found for ${hint} in ${intent.city}. Try a different query.` });
+      const hint = intent.movie_title || intent.genre || 'movies';
+      return res.json({ type: 'error', message: `I could not find ${hint} in ${intent.city}. Try another movie, city, or time.` });
     }
 
     const uniqueMovies = [...new Set(showRes.rows.map(r => r.title))];
@@ -1322,7 +1484,7 @@ Return ONLY valid JSON with these EXACT fields:
     if (!intent.cinema_name && uniqueCinemas.length > 1) {
       return res.json({
         type: 'clarify',
-        message: `I found shows at multiple cinemas. Which one do you prefer?`,
+        message: `I found ${uniqueMovies[0]} at multiple cinemas. Which one do you prefer?`,
         options: uniqueCinemas.slice(0, 4),
         context: { ...intent, clarification_field: 'cinema_name', movie_title: uniqueMovies[0] }
       });
@@ -1332,42 +1494,53 @@ Return ONLY valid JSON with these EXACT fields:
       const d = new Date(r.show_time);
       return `${d.getHours() % 12 || 12}:${d.getMinutes().toString().padStart(2, '0')} ${d.getHours() >= 12 ? 'pm' : 'am'}`;
     }))];
-    
     if (!intent.time_of_day && uniqueTimes.length > 1) {
       return res.json({
         type: 'clarify',
-        message: `I found multiple showtimes. Which time works best?`,
+        message: 'I found multiple showtimes. Which time works best?',
         options: uniqueTimes.slice(0, 4),
         context: { ...intent, clarification_field: 'time_of_day', movie_title: uniqueMovies[0], cinema_name: uniqueCinemas[0] }
       });
     }
 
     const bestShow = showRes.rows[0];
-
     if (bestShow.available_seats < intent.quantity) {
       return res.json({
         type: 'waitlist',
-        message: `"${bestShow.title}" at ${bestShow.cinema_name} only has ${bestShow.available_seats} seats left, but you asked for ${intent.quantity}. Would you like to join the waitlist?`,
+        message: `"${bestShow.title}" at ${bestShow.cinema_name} only has ${bestShow.available_seats} seats left, but you asked for ${intent.quantity}. Want me to add you to the waitlist?`,
         waitlistData: { show_id: bestShow.show_id, requested_seats: intent.quantity }
       });
     }
 
+    await query('SELECT expire_seat_holds()');
     const seatRes = await query(`
-      SELECT seat_id, row_no, seat_no, seat_type, price_multiplier 
-      FROM seats 
-      WHERE screen_id = $1 
-        AND seat_id NOT IN (
-          SELECT t.seat_id FROM tickets t JOIN bookings b ON t.booking_id = b.booking_id
-          WHERE t.show_id = $2 AND b.status = 'Confirmed'
+      SELECT seat_id, row_no, seat_no, seat_type, price_multiplier
+      FROM seats
+      WHERE screen_id = $1
+        AND NOT EXISTS (
+          SELECT 1
+          FROM tickets t
+          JOIN bookings b ON t.booking_id = b.booking_id
+          WHERE t.seat_id = seats.seat_id
+            AND t.show_id = $2
+            AND b.status = 'Confirmed'
         )
-      ORDER BY 
+        AND NOT EXISTS (
+          SELECT 1
+          FROM seat_holds h
+          WHERE h.seat_id = seats.seat_id
+            AND h.show_id = $2
+            AND h.status = 'Active'
+            AND h.expires_at > NOW()
+        )
+      ORDER BY
         CASE WHEN seat_type = 'VIP' THEN 1 WHEN seat_type = 'Premium' THEN 2 ELSE 3 END ASC,
         row_no ASC, seat_no ASC
       LIMIT $3
     `, [bestShow.screen_id, bestShow.show_id, intent.quantity]);
 
     if (seatRes.rows.length < intent.quantity) {
-       return res.json({ type: 'error', message: 'Not enough seats available.' });
+      return res.json({ type: 'error', message: 'Not enough seats are available right now.' });
     }
 
     const selectedSeats = seatRes.rows;
@@ -1377,16 +1550,20 @@ Return ONLY valid JSON with these EXACT fields:
 
     let preCartSnacks = {};
     if (intent.snack) {
-      const snRes = await query(`SELECT snack_id as id FROM snacks WHERE name ILIKE $1 LIMIT 1`, [`%${intent.snack}%`]);
+      const snRes = await query('SELECT snack_id as id FROM snacks WHERE name ILIKE $1 LIMIT 1', [`%${intent.snack}%`]);
       if (snRes.rows.length > 0) preCartSnacks[snRes.rows[0].id] = 1;
     }
 
     res.json({
       type: 'checkout',
+      message: `I found ${intent.quantity} ticket${intent.quantity === 1 ? '' : 's'} for ${bestShow.title} at ${bestShow.cinema_name}.`,
       payload: {
         show_id: bestShow.show_id,
         preSelectedSeatIds: selectedSeats.map(s => s.seat_id),
-        selectedSeats, showInfo: bestShow, totalTicketPrice, preCartSnacks
+        selectedSeats,
+        showInfo: bestShow,
+        totalTicketPrice,
+        preCartSnacks
       }
     });
   } catch (err) {

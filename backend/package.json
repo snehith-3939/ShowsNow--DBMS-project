@@ -8,7 +8,8 @@
     "seed": "node seedData.js",
     "refresh-shows": "node resetDb.js && node seedData.js",
     "reset": "node resetDb.js",
-    "test:admin-root-cause": "node test-admin-root-cause.js"
+    "test:admin-root-cause": "node test-admin-root-cause.js",
+    "test:audit-fixes": "node test-audit-fixes.js"
   },
   "keywords": [],
   "author": "",

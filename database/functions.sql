@@ -77,8 +77,8 @@ BEGIN
         WHERE booking_id = NEW.booking_id;
 
         IF ticket_count > 0 THEN
-            INSERT INTO loyalty_ledger (user_id, booking_id, points_earned, expires_at)
-            VALUES (NEW.user_id, NEW.booking_id, ticket_count * 50, CURRENT_TIMESTAMP + INTERVAL '60 days');
+            INSERT INTO loyalty_ledger (user_id, booking_id, points_earned, created_at, expires_at)
+            VALUES (NEW.user_id, NEW.booking_id, ticket_count * 50, clock_timestamp(), clock_timestamp() + INTERVAL '60 days');
         END IF;
     END IF;
 
