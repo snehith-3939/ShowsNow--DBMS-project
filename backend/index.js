@@ -1607,7 +1607,7 @@ Return ONLY valid JSON with these EXACT fields:
     }
 
     const uniqueMovies = [...new Set(showRes.rows.map(r => r.title))];
-    if (!intent.movie_title && uniqueMovies.length > 1) {
+    if (!intent.movie_title && uniqueMovies.length > 0) {
       const offset = intent.current_offset || 0;
       const opts = uniqueMovies.slice(offset, offset + 4);
       if (opts.length === 0) {
@@ -1619,14 +1619,14 @@ Return ONLY valid JSON with these EXACT fields:
       }
       return res.json({
         type: 'clarify',
-        message: 'I found a few movies playing. Which one would you like?',
+        message: uniqueMovies.length === 1 ? 'There is only one movie playing matching your search. Please select it to confirm:' : 'I found a few movies playing. Which one would you like?',
         options: opts,
         context: { ...intent, clarification_field: 'movie_title' }
       });
     }
 
     const uniqueCinemas = [...new Set(showRes.rows.map(r => r.cinema_name))];
-    if (!intent.cinema_name && uniqueCinemas.length > 1) {
+    if (!intent.cinema_name && uniqueCinemas.length > 0) {
       const offset = intent.current_offset || 0;
       const opts = uniqueCinemas.slice(offset, offset + 4);
       if (opts.length === 0) {
@@ -1638,7 +1638,7 @@ Return ONLY valid JSON with these EXACT fields:
       }
       return res.json({
         type: 'clarify',
-        message: `I found ${uniqueMovies[0]} at multiple cinemas. Which one do you prefer?`,
+        message: uniqueCinemas.length === 1 ? `I found ${uniqueMovies[0]} at only one cinema. Please select it to confirm:` : `I found ${uniqueMovies[0]} at multiple cinemas. Which one do you prefer?`,
         options: opts,
         context: { ...intent, clarification_field: 'cinema_name', movie_title: uniqueMovies[0] }
       });
@@ -1656,7 +1656,7 @@ Return ONLY valid JSON with these EXACT fields:
       
       return `${datePrefix}, ${d.getHours() % 12 || 12}:${d.getMinutes().toString().padStart(2, '0')} ${d.getHours() >= 12 ? 'pm' : 'am'}`;
     }))];
-    if (!intent.time_of_day && uniqueTimes.length > 1) {
+    if (!intent.time_of_day && uniqueTimes.length > 0) {
       const offset = intent.current_offset || 0;
       const opts = uniqueTimes.slice(offset, offset + 4);
       if (opts.length === 0) {
@@ -1668,7 +1668,7 @@ Return ONLY valid JSON with these EXACT fields:
       }
       return res.json({
         type: 'clarify',
-        message: 'I found multiple showtimes. Which time works best?',
+        message: uniqueTimes.length === 1 ? 'There is only one showtime available. Please select it to confirm:' : 'I found multiple showtimes. Which time works best?',
         options: opts,
         context: { ...intent, clarification_field: 'time_of_day', movie_title: uniqueMovies[0], cinema_name: uniqueCinemas[0] }
       });
