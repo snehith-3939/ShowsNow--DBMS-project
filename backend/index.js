@@ -179,6 +179,15 @@ async function extractLocalBookingIntent(promptText) {
     }
   }
 
+  const languages = ['english', 'hindi', 'telugu', 'tamil', 'malayalam', 'kannada', 'korean', 'japanese', 'french', 'spanish'];
+  for (const lang of languages) {
+    if (lowerPrompt.includes(lang)) {
+      intent.language = lang;
+      extractedSomething = true;
+      break;
+    }
+  }
+
   const cinemaChains = ['pvr', 'inox', 'miraj', 'carnival', 'cinepolis'];
   for (const chain of cinemaChains) {
     if (lowerPrompt.includes(chain)) {
@@ -1400,7 +1409,8 @@ Return ONLY valid JSON with these EXACT fields:
         local.intent.city ||
         local.intent.time_of_day ||
         local.intent.snack ||
-        local.intent.genre
+        local.intent.genre ||
+        local.intent.language
       );
       const promptIsInScope = hasBookingIntent(promptText) || meaningfulLocalIntent || Boolean(clarificationField);
       if (!promptIsInScope) {
@@ -1494,6 +1504,11 @@ Return ONLY valid JSON with these EXACT fields:
     if (intent.cinema_name) {
       sql += ` AND c.name ILIKE $${paramIdx}`;
       params.push(`%${intent.cinema_name}%`);
+      paramIdx++;
+    }
+    if (intent.language) {
+      sql += ` AND m.language ILIKE $${paramIdx}`;
+      params.push(`%${intent.language}%`);
       paramIdx++;
     }
 
