@@ -122,7 +122,7 @@ const AutonomousBot = () => {
           
           <div className="ai-chat-body" style={{ flex: 1, padding: '1.5rem', overflowY: 'auto', background: 'rgba(10,10,15,0.6)', display: 'flex', flexDirection: 'column', gap: '16px', height: '350px' }}>
             {messages.map((m, i) => (
-              <div key={i} style={{ alignSelf: m.sender === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
+              <div key={i} style={{ alignSelf: m.sender === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%', flexShrink: 0 }}>
                 <div style={{
                   background: m.sender === 'user' ? 'linear-gradient(135deg, #c8a96e, #f84464)' : 'rgba(255,255,255,0.08)',
                   color: 'white',

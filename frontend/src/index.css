@@ -227,7 +227,7 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Custom Scrollbar for AI Chat */
 .ai-chat-body { overscroll-behavior: contain; }
-.ai-chat-body::-webkit-scrollbar { width: 6px; }
+.ai-chat-body::-webkit-scrollbar { width: 10px; }
 .ai-chat-body::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.02); border-radius: 4px; margin: 4px 0; }
 .ai-chat-body::-webkit-scrollbar-thumb { background: rgba(212, 175, 55, 0.4); border-radius: 4px; }
 .ai-chat-body::-webkit-scrollbar-thumb:hover { background: rgba(212, 175, 55, 0.7); }
