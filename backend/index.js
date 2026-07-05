@@ -169,6 +169,11 @@ async function extractLocalBookingIntent(promptText) {
     extractedSomething = true;
   }
 
+  if (/\b(more|other|next|anymore|any more|another)\b/i.test(lowerPrompt)) {
+    intent.option_offset = true;
+    extractedSomething = true;
+  }
+
   const snacks = ['popcorn', 'coke', 'pepsi', 'nachos', 'water', 'coffee', 'fries', 'burger', 'tea'];
   for (const snack of snacks) {
     if (lowerPrompt.includes(snack)) {
@@ -1450,11 +1455,20 @@ Return ONLY valid JSON with these EXACT fields:
       }
       delete intent.clarification_field;
       delete local.intent.movie_options;
+      
+      if (local.intent.option_offset) {
+        intent.current_offset = (intent.current_offset || 0) + 4;
+        delete local.intent.option_offset;
+      }
+      
       intent = { ...intent, ...local.intent };
 
       if (isConversational) {
         return res.json({ type: 'greeting', message: 'I am the ShowsNow Concierge. I can help you search for movies by city, genre, or time, and book your tickets.' });
       }
+    } else {
+       // if no promptText (initial load), reset offset
+       intent.current_offset = 0;
     }
 
     if (!intent.quantity && Object.keys(intent).length > 0) {
@@ -1604,20 +1618,38 @@ Return ONLY valid JSON with these EXACT fields:
 
     const uniqueMovies = [...new Set(showRes.rows.map(r => r.title))];
     if (!intent.movie_title && uniqueMovies.length > 1) {
+      const offset = intent.current_offset || 0;
+      const opts = uniqueMovies.slice(offset, offset + 4);
+      if (opts.length === 0) {
+        return res.json({
+          type: 'error',
+          message: 'No more movies found. Try searching for a different city or genre.',
+          context: { ...intent, current_offset: 0 }
+        });
+      }
       return res.json({
         type: 'clarify',
         message: 'I found a few movies playing. Which one would you like?',
-        options: uniqueMovies.slice(0, 4),
+        options: opts,
         context: { ...intent, clarification_field: 'movie_title' }
       });
     }
 
     const uniqueCinemas = [...new Set(showRes.rows.map(r => r.cinema_name))];
     if (!intent.cinema_name && uniqueCinemas.length > 1) {
+      const offset = intent.current_offset || 0;
+      const opts = uniqueCinemas.slice(offset, offset + 4);
+      if (opts.length === 0) {
+        return res.json({
+          type: 'error',
+          message: 'No more cinemas found.',
+          context: { ...intent, current_offset: 0 }
+        });
+      }
       return res.json({
         type: 'clarify',
         message: `I found ${uniqueMovies[0]} at multiple cinemas. Which one do you prefer?`,
-        options: uniqueCinemas.slice(0, 4),
+        options: opts,
         context: { ...intent, clarification_field: 'cinema_name', movie_title: uniqueMovies[0] }
       });
     }
@@ -1635,10 +1667,19 @@ Return ONLY valid JSON with these EXACT fields:
       return `${datePrefix}, ${d.getHours() % 12 || 12}:${d.getMinutes().toString().padStart(2, '0')} ${d.getHours() >= 12 ? 'pm' : 'am'}`;
     }))];
     if (!intent.time_of_day && uniqueTimes.length > 1) {
+      const offset = intent.current_offset || 0;
+      const opts = uniqueTimes.slice(offset, offset + 4);
+      if (opts.length === 0) {
+        return res.json({
+          type: 'error',
+          message: 'No more showtimes found.',
+          context: { ...intent, current_offset: 0 }
+        });
+      }
       return res.json({
         type: 'clarify',
         message: 'I found multiple showtimes. Which time works best?',
-        options: uniqueTimes.slice(0, 4),
+        options: opts,
         context: { ...intent, clarification_field: 'time_of_day', movie_title: uniqueMovies[0], cinema_name: uniqueCinemas[0] }
       });
     }
