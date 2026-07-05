@@ -1486,7 +1486,7 @@ Return ONLY valid JSON with these EXACT fields:
       paramIdx++;
     }
     orderClauses.push('m.vote_average DESC', 's.show_time ASC');
-    sql += ` ORDER BY ${orderClauses.join(', ')} LIMIT 5`;
+    sql += ` ORDER BY ${orderClauses.join(', ')} LIMIT 50`;
 
     const showRes = await query(sql, params);
 
