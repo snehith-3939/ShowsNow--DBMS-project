@@ -1451,9 +1451,13 @@ Return ONLY valid JSON with these EXACT fields:
       delete intent.clarification_field;
       delete local.intent.movie_options;
       intent = { ...intent, ...local.intent };
+
+      if (isConversational) {
+        return res.json({ type: 'greeting', message: 'I am the ShowsNow Concierge. I can help you search for movies by city, genre, or time, and book your tickets.' });
+      }
     }
 
-    if (!intent.quantity) {
+    if (!intent.quantity && Object.keys(intent).length > 0) {
       return res.json({
         type: 'clarify',
         message: 'How many tickets do you need? (Max 10)',
