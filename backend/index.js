@@ -161,6 +161,14 @@ async function extractLocalBookingIntent(promptText) {
     extractedSomething = true;
   }
 
+  if (lowerPrompt.includes('tomorrow')) {
+    intent.date = 'tomorrow';
+    extractedSomething = true;
+  } else if (lowerPrompt.includes('today') || lowerPrompt.includes('tonight')) {
+    intent.date = 'today';
+    extractedSomething = true;
+  }
+
   const snacks = ['popcorn', 'coke', 'pepsi', 'nachos', 'water', 'coffee', 'fries', 'burger', 'tea'];
   for (const snack of snacks) {
     if (lowerPrompt.includes(snack)) {
@@ -1408,6 +1416,7 @@ Return ONLY valid JSON with these EXACT fields:
         local.intent.movie_options ||
         local.intent.city ||
         local.intent.time_of_day ||
+        local.intent.date ||
         local.intent.snack ||
         local.intent.genre ||
         local.intent.language
@@ -1434,7 +1443,15 @@ Return ONLY valid JSON with these EXACT fields:
       intent = { ...intent, ...local.intent };
     }
 
-    intent.quantity = Math.min(Math.max(parseInt(intent.quantity, 10) || 2, 1), 10);
+    if (!intent.quantity) {
+      return res.json({
+        type: 'clarify',
+        message: 'How many tickets do you need? (Max 10)',
+        options: ['1', '2', '3', '4'],
+        context: { ...intent, clarification_field: 'quantity' }
+      });
+    }
+    intent.quantity = Math.min(Math.max(parseInt(intent.quantity, 10), 1), 10);
 
     if (!intent.city) {
       return res.json({
@@ -1446,35 +1463,59 @@ Return ONLY valid JSON with these EXACT fields:
     }
 
     let timeStr = null;
+    let exactDateStr = null;
+
     if (intent.time_of_day) {
       const t = String(intent.time_of_day).toLowerCase();
-      const specificTimeWithColon = t.match(/(\d{1,2}):(\d{2})\s*(am|pm)?/i);
-      const specificTimeWithoutColon = t.match(/(\d{1,2})\s*(am|pm)/i);
-
-      if (specificTimeWithColon) {
-        let hour = parseInt(specificTimeWithColon[1], 10);
-        let min = specificTimeWithColon[2];
-        let ampm = specificTimeWithColon[3] ? specificTimeWithColon[3].toLowerCase() : null;
-        
-        if (!ampm && hour < 12) {
-          hour += 12; // Assume PM for 1-11 if not specified
-        } else if (ampm === 'pm' && hour < 12) {
-          hour += 12;
-        } else if (ampm === 'am' && hour === 12) {
-          hour = 0;
-        }
-        timeStr = `${hour.toString().padStart(2, '0')}:${min}`;
-      } else if (specificTimeWithoutColon) {
-        let hour = parseInt(specificTimeWithoutColon[1], 10);
-        let ampm = specificTimeWithoutColon[2].toLowerCase();
+      
+      const dropdownMatch = t.match(/^(today|tomorrow|[a-z]{3}\s\d{1,2}),\s*(\d{1,2}):(\d{2})\s*(am|pm)$/i);
+      if (dropdownMatch) {
+        let datePart = dropdownMatch[1].toLowerCase();
+        let hour = parseInt(dropdownMatch[2], 10);
+        let min = dropdownMatch[3];
+        let ampm = dropdownMatch[4].toLowerCase();
         if (ampm === 'pm' && hour < 12) hour += 12;
         if (ampm === 'am' && hour === 12) hour = 0;
-        timeStr = `${hour.toString().padStart(2, '0')}:00`;
-      } else if (t === 'morning') timeStr = '10:00';
-      else if (t === 'afternoon') timeStr = '14:00';
-      else if (t === 'evening' || t === 'tonight') timeStr = '18:00';
-      else if (t === 'night') timeStr = '20:00';
+        timeStr = `${hour.toString().padStart(2, '0')}:${min}`;
+        
+        if (datePart === 'today') exactDateStr = 'CURRENT_DATE';
+        else if (datePart === 'tomorrow') exactDateStr = 'CURRENT_DATE + INTERVAL \'1 day\'';
+        else {
+          const d = new Date(`${datePart} ${new Date().getFullYear()}`);
+          exactDateStr = `'${d.toISOString().split('T')[0]}'`;
+        }
+      } else {
+        const specificTimeWithColon = t.match(/(\d{1,2}):(\d{2})\s*(am|pm)?/i);
+        const specificTimeWithoutColon = t.match(/(\d{1,2})\s*(am|pm)/i);
+
+        if (specificTimeWithColon) {
+          let hour = parseInt(specificTimeWithColon[1], 10);
+          let min = specificTimeWithColon[2];
+          let ampm = specificTimeWithColon[3] ? specificTimeWithColon[3].toLowerCase() : null;
+          
+          if (!ampm && hour < 12) {
+            hour += 12;
+          } else if (ampm === 'pm' && hour < 12) {
+            hour += 12;
+          } else if (ampm === 'am' && hour === 12) {
+            hour = 0;
+          }
+          timeStr = `${hour.toString().padStart(2, '0')}:${min}`;
+        } else if (specificTimeWithoutColon) {
+          let hour = parseInt(specificTimeWithoutColon[1], 10);
+          let ampm = specificTimeWithoutColon[2].toLowerCase();
+          if (ampm === 'pm' && hour < 12) hour += 12;
+          if (ampm === 'am' && hour === 12) hour = 0;
+          timeStr = `${hour.toString().padStart(2, '0')}:00`;
+        } else if (t === 'morning') timeStr = '10:00';
+        else if (t === 'afternoon') timeStr = '14:00';
+        else if (t === 'evening' || t === 'tonight') timeStr = '18:00';
+        else if (t === 'night') timeStr = '20:00';
+      }
     }
+
+    if (intent.date === 'today' && !exactDateStr) exactDateStr = 'CURRENT_DATE';
+    if (intent.date === 'tomorrow' && !exactDateStr) exactDateStr = 'CURRENT_DATE + INTERVAL \'1 day\'';
 
     const params = [];
     let sql = `
@@ -1510,6 +1551,10 @@ Return ONLY valid JSON with these EXACT fields:
       sql += ` AND m.language ILIKE $${paramIdx}`;
       params.push(`%${intent.language}%`);
       paramIdx++;
+    }
+
+    if (exactDateStr) {
+      sql += ` AND s.show_time::date = ${exactDateStr}::date`;
     }
 
     const orderClauses = [];
@@ -1565,7 +1610,15 @@ Return ONLY valid JSON with these EXACT fields:
 
     const uniqueTimes = [...new Set(showRes.rows.map(r => {
       const d = new Date(r.show_time);
-      return `${d.getHours() % 12 || 12}:${d.getMinutes().toString().padStart(2, '0')} ${d.getHours() >= 12 ? 'pm' : 'am'}`;
+      const today = new Date();
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      
+      const isToday = d.toDateString() === today.toDateString();
+      const isTomorrow = d.toDateString() === tomorrow.toDateString();
+      const datePrefix = isToday ? 'Today' : isTomorrow ? 'Tomorrow' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      
+      return `${datePrefix}, ${d.getHours() % 12 || 12}:${d.getMinutes().toString().padStart(2, '0')} ${d.getHours() >= 12 ? 'pm' : 'am'}`;
     }))];
     if (!intent.time_of_day && uniqueTimes.length > 1) {
       return res.json({
