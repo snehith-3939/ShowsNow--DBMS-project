@@ -1471,16 +1471,6 @@ Return ONLY valid JSON with these EXACT fields:
        intent.current_offset = 0;
     }
 
-    if (!intent.quantity && Object.keys(intent).length > 0) {
-      return res.json({
-        type: 'clarify',
-        message: 'How many tickets do you need? (Max 10)',
-        options: ['1', '2', '3', '4'],
-        context: { ...intent, clarification_field: 'quantity' }
-      });
-    }
-    intent.quantity = Math.min(Math.max(parseInt(intent.quantity, 10), 1), 10);
-
     if (!intent.city) {
       return res.json({
         type: 'clarify',
@@ -1683,6 +1673,16 @@ Return ONLY valid JSON with these EXACT fields:
         context: { ...intent, clarification_field: 'time_of_day', movie_title: uniqueMovies[0], cinema_name: uniqueCinemas[0] }
       });
     }
+
+    if (!intent.quantity) {
+      return res.json({
+        type: 'clarify',
+        message: 'How many tickets do you need? (Max 10)',
+        options: ['1', '2', '3', '4'],
+        context: { ...intent, clarification_field: 'quantity' }
+      });
+    }
+    intent.quantity = Math.min(Math.max(parseInt(intent.quantity, 10), 1), 10);
 
     const bestShow = showRes.rows[0];
     if (bestShow.available_seats < intent.quantity) {
