@@ -140,7 +140,7 @@ async function extractLocalBookingIntent(promptText) {
     }
   }
 
-  const timeMatch = lowerPrompt.match(/(\d+)(?::\d+)?\s*(am|pm)/i);
+  const timeMatch = lowerPrompt.match(/(\d{1,2}:\d{2})\s*(am|pm)?/i) || lowerPrompt.match(/(\d{1,2})\s*(am|pm)/i);
   if (timeMatch) {
     intent.time_of_day = timeMatch[0];
     extractedSomething = true;
@@ -1438,11 +1438,27 @@ Return ONLY valid JSON with these EXACT fields:
     let timeStr = null;
     if (intent.time_of_day) {
       const t = String(intent.time_of_day).toLowerCase();
-      const specificTime = t.match(/(\d+)(?::\d+)?\s*(am|pm)/i);
-      if (specificTime) {
-        let hour = parseInt(specificTime[1], 10);
-        if (specificTime[2].toLowerCase() === 'pm' && hour < 12) hour += 12;
-        if (specificTime[2].toLowerCase() === 'am' && hour === 12) hour = 0;
+      const specificTimeWithColon = t.match(/(\d{1,2}):(\d{2})\s*(am|pm)?/i);
+      const specificTimeWithoutColon = t.match(/(\d{1,2})\s*(am|pm)/i);
+
+      if (specificTimeWithColon) {
+        let hour = parseInt(specificTimeWithColon[1], 10);
+        let min = specificTimeWithColon[2];
+        let ampm = specificTimeWithColon[3] ? specificTimeWithColon[3].toLowerCase() : null;
+        
+        if (!ampm && hour < 12) {
+          hour += 12; // Assume PM for 1-11 if not specified
+        } else if (ampm === 'pm' && hour < 12) {
+          hour += 12;
+        } else if (ampm === 'am' && hour === 12) {
+          hour = 0;
+        }
+        timeStr = `${hour.toString().padStart(2, '0')}:${min}`;
+      } else if (specificTimeWithoutColon) {
+        let hour = parseInt(specificTimeWithoutColon[1], 10);
+        let ampm = specificTimeWithoutColon[2].toLowerCase();
+        if (ampm === 'pm' && hour < 12) hour += 12;
+        if (ampm === 'am' && hour === 12) hour = 0;
         timeStr = `${hour.toString().padStart(2, '0')}:00`;
       } else if (t === 'morning') timeStr = '10:00';
       else if (t === 'afternoon') timeStr = '14:00';
