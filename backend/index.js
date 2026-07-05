@@ -1338,7 +1338,7 @@ app.post('/api/bookings/:id/cancel', authenticateToken, async (req, res) => {
 
 // Autonomous booking assistant. Uses Gemini for extraction when configured,
 // with a deterministic local parser and hard out-of-scope boundary.
-app.post('/api/autonomous-agent', authenticateToken, async (req, res) => {
+app.post('/api/autonomous-agent', async (req, res) => {
   try {
     const { prompt, context, isOption } = req.body;
     const promptText = typeof prompt === 'string' ? prompt.trim() : '';
