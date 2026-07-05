@@ -1498,8 +1498,18 @@ Return ONLY valid JSON with these EXACT fields:
     const showRes = await query(sql, params);
 
     if (showRes.rows.length === 0) {
+      if (clarificationField) {
+        return res.json({ 
+          type: 'error', 
+          message: `I didn't understand "${promptText}". Please select an option from the list or try rephrasing.`,
+          context: { ...context } 
+        });
+      }
       const hint = intent.movie_title || intent.genre || 'movies';
-      return res.json({ type: 'error', message: `I could not find ${hint} in ${intent.city}. Try another movie, city, or time.` });
+      return res.json({ 
+        type: 'error', 
+        message: `I could not find ${hint} in ${intent.city}. Try another movie, city, or time.` 
+      });
     }
 
     const uniqueMovies = [...new Set(showRes.rows.map(r => r.title))];
