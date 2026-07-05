@@ -1354,7 +1354,14 @@ app.post('/api/autonomous-agent', async (req, res) => {
       delete intent.clarification_field;
     } else if (promptText) {
       const lowerPrompt = promptText.toLowerCase();
-      if (lowerPrompt.includes('start over') || lowerPrompt.includes('cancel')) {
+      if (
+        lowerPrompt.includes('start over') || 
+        lowerPrompt.includes('cancel') ||
+        lowerPrompt.includes('find movies') ||
+        lowerPrompt.includes('movies in') ||
+        lowerPrompt.includes('show me') ||
+        lowerPrompt.includes('search')
+      ) {
         intent = {};
       }
 
