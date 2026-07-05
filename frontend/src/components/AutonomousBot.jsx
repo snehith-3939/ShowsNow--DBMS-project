@@ -21,7 +21,7 @@ const AutonomousBot = () => {
     }
   }, [messages, showAiPanel]);
 
-  const sendRequest = async (userText, currentContext) => {
+  const sendRequest = async (userText, currentContext, isOption = false) => {
     setLoading(true);
     setMessages(prev => [...prev, { sender: 'user', text: userText }]);
     setPrompt('');
@@ -35,7 +35,7 @@ const AutonomousBot = () => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ prompt: userText, context: mergedContext })
+        body: JSON.stringify({ prompt: userText, context: mergedContext, isOption })
       });
       const data = await res.json();
       
@@ -82,7 +82,7 @@ const AutonomousBot = () => {
   };
 
   const handleOptionClick = (opt) => {
-    sendRequest(opt, context);
+    sendRequest(opt, context, true);
   };
 
   const handleJoinWaitlist = async (waitlistData) => {

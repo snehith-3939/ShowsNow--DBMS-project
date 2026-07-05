@@ -179,6 +179,15 @@ async function extractLocalBookingIntent(promptText) {
     }
   }
 
+  const cinemaChains = ['pvr', 'inox', 'miraj', 'carnival', 'cinepolis'];
+  for (const chain of cinemaChains) {
+    if (lowerPrompt.includes(chain)) {
+      intent.cinema_name = chain;
+      extractedSomething = true;
+      break;
+    }
+  }
+
   const moviesRes = await query('SELECT title FROM movies ORDER BY title');
   const movieMatches = [];
   const promptWords = new Set(lowerPrompt.split(/[^a-z0-9]+/).filter(word => word.length >= 3));
@@ -1331,7 +1340,7 @@ app.post('/api/bookings/:id/cancel', authenticateToken, async (req, res) => {
 // with a deterministic local parser and hard out-of-scope boundary.
 app.post('/api/autonomous-agent', authenticateToken, async (req, res) => {
   try {
-    const { prompt, context } = req.body;
+    const { prompt, context, isOption } = req.body;
     const promptText = typeof prompt === 'string' ? prompt.trim() : '';
     if (!promptText && !context) {
       return res.json({ type: 'out_of_scope', message: BOT_OUT_OF_SCOPE_MESSAGE });
@@ -1340,7 +1349,10 @@ app.post('/api/autonomous-agent', authenticateToken, async (req, res) => {
     let intent = context ? { ...context } : {};
     const clarificationField = context?.clarification_field;
 
-    if (promptText) {
+    if (isOption && clarificationField) {
+      intent[clarificationField] = promptText;
+      delete intent.clarification_field;
+    } else if (promptText) {
       const lowerPrompt = promptText.toLowerCase();
       if (lowerPrompt.includes('start over') || lowerPrompt.includes('cancel')) {
         intent = {};
@@ -1399,9 +1411,8 @@ Return ONLY valid JSON with these EXACT fields:
 
       if (clarificationField && !local.extractedSomething) {
         intent[clarificationField] = promptText;
-      } else {
-        delete intent.clarification_field;
       }
+      delete intent.clarification_field;
       delete local.intent.movie_options;
       intent = { ...intent, ...local.intent };
     }
