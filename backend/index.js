@@ -1392,13 +1392,15 @@ Return ONLY valid JSON with these EXACT fields:
 - "snack": string or null
 - "genre": string or null
 - "time_of_day": string or null
+- "date": string or null
+- "language": string or null
 - "cinema_name": string or null`;
 
         if (GEMINI_API_KEY && GEMINI_API_KEY !== 'your_gemini_api_key_here') {
           try {
             const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
             const model = genAI.getGenerativeModel({
-              model: 'gemini-1.5-flash',
+              model: 'gemini-2.5-flash',
               systemInstruction,
               generationConfig: { responseMimeType: 'application/json', temperature: 0.1 }
             });
