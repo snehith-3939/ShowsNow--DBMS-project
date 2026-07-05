@@ -1735,9 +1735,19 @@ Return ONLY valid JSON with these EXACT fields:
       if (snRes.rows.length > 0) preCartSnacks[snRes.rows[0].id] = 1;
     }
 
+    const finalDateObj = new Date(bestShow.show_time);
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    const isToday = finalDateObj.toDateString() === today.toDateString();
+    const isTomorrow = finalDateObj.toDateString() === tomorrow.toDateString();
+    const datePrefix = isToday ? 'Today' : isTomorrow ? 'Tomorrow' : finalDateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const timeString = `${finalDateObj.getHours() % 12 || 12}:${finalDateObj.getMinutes().toString().padStart(2, '0')} ${finalDateObj.getHours() >= 12 ? 'pm' : 'am'}`;
+
     res.json({
       type: 'checkout',
-      message: `I found ${intent.quantity} ticket${intent.quantity === 1 ? '' : 's'} for ${bestShow.title} at ${bestShow.cinema_name}.`,
+      message: `I found ${intent.quantity} ticket${intent.quantity === 1 ? '' : 's'} for ${bestShow.title} at ${bestShow.cinema_name} for ${datePrefix} at ${timeString}.`,
       payload: {
         show_id: bestShow.show_id,
         preSelectedSeatIds: selectedSeats.map(s => s.seat_id),
