@@ -60,7 +60,7 @@ const AutonomousBot = () => {
         }]);
       } else if (data.type === 'error') {
         setMessages(prev => [...prev, { sender: 'bot', text: data.message }]);
-      } else if (data.type === 'out_of_scope') {
+      } else if (data.type === 'out_of_scope' || data.type === 'greeting') {
         setMessages(prev => [...prev, { sender: 'bot', text: data.message }]);
       } else if (data.payload) {
         setMessages(prev => [...prev, { sender: 'bot', text: data.message || 'Great, I found seats for you. Taking you to checkout now...' }]);
