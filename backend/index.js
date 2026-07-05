@@ -1423,7 +1423,15 @@ Return ONLY valid JSON with these EXACT fields:
         local.intent.genre ||
         local.intent.language
       );
-      const promptIsInScope = hasBookingIntent(promptText) || meaningfulLocalIntent || Boolean(clarificationField);
+      
+      const isGreeting = /^(hi|hello|hey|greetings|howdy)(?:\s+there)?$/i.test(promptText.trim());
+      if (isGreeting) {
+         return res.json({ type: 'greeting', message: 'Hello! I am the ShowsNow Concierge. I can help you find movies and book tickets. What would you like to watch?' });
+      }
+
+      const isConversational = /^(are you|who are|what are|can you|help)\b/i.test(promptText.trim());
+      
+      const promptIsInScope = hasBookingIntent(promptText) || meaningfulLocalIntent || Boolean(clarificationField) || isConversational || (Object.keys(intent).length > 0);
       if (!promptIsInScope) {
         return res.json({ type: 'out_of_scope', message: BOT_OUT_OF_SCOPE_MESSAGE });
       }
