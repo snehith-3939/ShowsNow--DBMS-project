@@ -1492,7 +1492,7 @@ Return ONLY valid JSON with these EXACT fields:
       params.push(timeStr);
       paramIdx++;
     }
-    orderClauses.push('m.vote_average DESC', 's.show_time ASC');
+    orderClauses.push('s.show_time ASC', 'm.vote_average DESC');
     sql += ` ORDER BY ${orderClauses.join(', ')} LIMIT 50`;
 
     const showRes = await query(sql, params);
