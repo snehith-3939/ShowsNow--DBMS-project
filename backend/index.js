@@ -12,6 +12,7 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? null : 'fallback_secret_change_me');
 const HOLD_MINUTES = 10;
+const APP_TIME_ZONE = process.env.APP_TIME_ZONE || 'Asia/Kolkata';
 const PAYMENT_METHODS = new Set(['Demo', 'UPI', 'Card', 'NetBanking', 'Wallet', 'Cash']);
 const LOYALTY_REWARD_SETTLEMENT_SECONDS = Math.max(
   0,
@@ -88,6 +89,20 @@ const BOT_OUT_OF_SCOPE_MESSAGE = 'I can only help with booking movie tickets on 
 const BOT_CHECKOUT_CONFIRM_LABEL = 'Continue to checkout';
 const BOOKING_INTENT_PATTERN = /\b(book|booking|ticket|tickets|tix|movie|movies|show|shows|showtime|showtimes|cinema|cinemas|seat|seats|watch|playing|popcorn|snack|snacks|coke|pepsi|nachos)\b/i;
 const ACTOR_FILTER_PATTERN = /\b(actor|actress|actors|actresses|cast|starring|starred|featuring|hero|heroine)\b/i;
+const SEAT_CHANGE_PATTERN = /\b(seat|seats|row|front|back|rear|middle|center|centre|vip|premium|regular|normal|cheap|cheapest|together|adjacent)\b/i;
+const LANGUAGE_ALIASES = {
+  english: ['english', 'en'],
+  hindi: ['hindi', 'hi'],
+  telugu: ['telugu', 'te'],
+  tamil: ['tamil', 'ta'],
+  malayalam: ['malayalam', 'ml'],
+  kannada: ['kannada', 'kn'],
+  korean: ['korean', 'ko'],
+  japanese: ['japanese', 'ja'],
+  french: ['french', 'fr'],
+  spanish: ['spanish', 'es'],
+};
+const GENRE_ALIASES = ['action', 'comedy', 'drama', 'horror', 'romance', 'thriller', 'sci-fi', 'science fiction', 'animation', 'musical'];
 const CITY_ALIASES = new Map([
   ['bombay', 'Mumbai'],
   ['mumbai', 'Mumbai'],
@@ -116,7 +131,8 @@ async function extractLocalBookingIntent(promptText) {
   let extractedSomething = false;
 
   const numMatch = lowerPrompt.match(/(\d+)\s*(?:ticket|tickets|tix)/i) ||
-    lowerPrompt.match(/(?:for\s+)?(\d+)\s*(?:people|person|of us)/i);
+    lowerPrompt.match(/(?:for\s+)?(\d+)\s*(?:people|person|of us)/i) ||
+    lowerPrompt.match(/^(10|[1-9])$/);
   if (numMatch) {
     intent.quantity = parseInt(numMatch[1], 10);
     extractedSomething = true;
@@ -352,14 +368,43 @@ function parseTimeIntent(timeValue) {
   return null;
 }
 
+function zonedDateKey(dateValue, timeZone = APP_TIME_ZONE) {
+  const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date);
+  const get = type => parts.find(p => p.type === type)?.value;
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
+function formatTimeInAppZone(dateValue) {
+  return new Intl.DateTimeFormat('en-IN', {
+    timeZone: APP_TIME_ZONE,
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  }).format(new Date(dateValue)).toLowerCase();
+}
+
+function formatDateInAppZone(dateValue) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: APP_TIME_ZONE,
+    month: 'short',
+    day: 'numeric'
+  }).format(new Date(dateValue));
+}
+
 function formatShowOptionTime(show) {
-  const d = new Date(show.show_time);
   const today = new Date();
   const tomorrow = addDays(today, 1);
-  const isToday = d.toDateString() === today.toDateString();
-  const isTomorrow = d.toDateString() === tomorrow.toDateString();
-  const datePrefix = isToday ? 'Today' : isTomorrow ? 'Tomorrow' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  return `${datePrefix}, ${d.getHours() % 12 || 12}:${d.getMinutes().toString().padStart(2, '0')} ${d.getHours() >= 12 ? 'pm' : 'am'}`;
+  const showDateKey = zonedDateKey(show.show_time);
+  const isToday = showDateKey === zonedDateKey(today);
+  const isTomorrow = showDateKey === zonedDateKey(tomorrow);
+  const datePrefix = isToday ? 'Today' : isTomorrow ? 'Tomorrow' : formatDateInAppZone(show.show_time);
+  return `${datePrefix}, ${formatTimeInAppZone(show.show_time)}`;
 }
 
 function selectedOptionFromContext(context, promptText) {
@@ -388,8 +433,57 @@ function normalizeCityValue(city) {
   return trimmed.toLowerCase() === 'all' ? null : trimmed;
 }
 
+function canonicalLanguageFromText(value = '') {
+  const text = String(value).trim().toLowerCase();
+  for (const [language, aliases] of Object.entries(LANGUAGE_ALIASES)) {
+    if (aliases.includes(text)) return language;
+  }
+  return null;
+}
+
+function languageSearchTerms(value = '') {
+  const text = String(value).trim().toLowerCase();
+  const canonical = canonicalLanguageFromText(text) || text;
+  return [...new Set([canonical, ...(LANGUAGE_ALIASES[canonical] || [text])].filter(Boolean))];
+}
+
+function titleLooksGenericMovieRequest(title = '') {
+  const text = String(title).trim().toLowerCase();
+  return /^(movie|movies|latest movie|latest movies|new movie|new movies|newest movie|newest movies)$/.test(text);
+}
+
+function normalizeGenericTitleIntent(intent) {
+  const normalized = { ...intent };
+  if (!normalized.movie_title || typeof normalized.movie_title !== 'string') return normalized;
+
+  const title = normalized.movie_title.trim().toLowerCase();
+  const languageMovieMatch = title.match(/^([a-z]+)\s+movies?$/);
+  if (languageMovieMatch) {
+    const language = canonicalLanguageFromText(languageMovieMatch[1]);
+    if (language) {
+      normalized.language = normalized.language || language;
+      delete normalized.movie_title;
+      return normalized;
+    }
+  }
+
+  const genreMovieMatch = title.match(/^([a-z -]+)\s+movies?$/);
+  if (genreMovieMatch && GENRE_ALIASES.includes(genreMovieMatch[1])) {
+    normalized.genre = normalized.genre || (genreMovieMatch[1] === 'science fiction' ? 'sci-fi' : genreMovieMatch[1]);
+    delete normalized.movie_title;
+    return normalized;
+  }
+
+  if (titleLooksGenericMovieRequest(title)) {
+    if (/\b(latest|new|newest)\b/.test(title)) normalized.sort_preference = normalized.sort_preference || 'latest_release';
+    delete normalized.movie_title;
+  }
+
+  return normalized;
+}
+
 function normalizeBotIntent(intent = {}) {
-  const normalized = sanitizeBotContext(intent);
+  const normalized = normalizeGenericTitleIntent(sanitizeBotContext(intent));
   const normalizedCity = normalizeCityValue(normalized.city);
   if (normalized.city && !normalizedCity) {
     delete normalized.city;
@@ -398,16 +492,139 @@ function normalizeBotIntent(intent = {}) {
     normalized.city = normalizedCity;
     delete normalized.all_cities;
   }
+  if (normalized.language) {
+    normalized.language = canonicalLanguageFromText(normalized.language) || String(normalized.language).trim().toLowerCase();
+  }
   return normalized;
 }
 
+function clearSelectedBookingFromIntent(intent = {}) {
+  const cleared = normalizeBotIntent(intent);
+  delete cleared.movie_title;
+  delete cleared.cinema_name;
+  delete cleared.time_of_day;
+  delete cleared.date;
+  delete cleared.selected_show_id;
+  delete cleared.movie_confirmed;
+  delete cleared.cinema_confirmed;
+  delete cleared.time_confirmed;
+  delete cleared.checkoutPayload;
+  cleared.current_offset = 0;
+  return cleared;
+}
+
+function isNewSearchDuringConfirmation(promptText = '') {
+  const text = String(promptText).toLowerCase();
+  if (/\b(movie|movies|show me|find|search|latest|newest|new release)\b/.test(text)) return true;
+  if (Object.keys(LANGUAGE_ALIASES).some(lang => new RegExp(`\\b${lang}\\b`).test(text))) return true;
+  if (GENRE_ALIASES.some(genre => text.includes(genre))) return true;
+  return false;
+}
+
 function showDateLabel(showTime) {
-  const d = new Date(showTime);
   const today = new Date();
   const tomorrow = addDays(today, 1);
-  if (d.toDateString() === today.toDateString()) return 'Today';
-  if (d.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const showDateKey = zonedDateKey(showTime);
+  if (showDateKey === zonedDateKey(today)) return 'Today';
+  if (showDateKey === zonedDateKey(tomorrow)) return 'Tomorrow';
+  return formatDateInAppZone(showTime);
+}
+
+function inferSeatPreference(promptText = '', currentSeats = []) {
+  const text = String(promptText).toLowerCase();
+  const asksForSeats = SEAT_CHANGE_PATTERN.test(text);
+  const preference = {};
+
+  if (/\b(vip|luxury)\b/.test(text)) preference.seat_type = 'VIP';
+  else if (/\bpremium\b/.test(text)) preference.seat_type = 'Premium';
+  else if (/\b(regular|normal|cheap|cheapest|budget)\b/.test(text)) preference.seat_type = 'Regular';
+
+  if (/\b(back|rear|last)\b/.test(text)) preference.row_zone = 'back';
+  else if (/\b(front|first)\b/.test(text)) preference.row_zone = 'front';
+  else if (/\b(middle|center|centre)\b/.test(text)) preference.row_zone = 'middle';
+
+  const rowMatch = text.match(/\brow\s*([a-z])\b/i) || text.match(/\b([a-z])\s*row\b/i);
+  if (rowMatch) preference.row_no = rowMatch[1].toUpperCase();
+
+  if (/\b(together|adjacent|same row|side by side)\b/.test(text)) preference.keep_together = true;
+
+  if (/\b(change|different|other|another|switch|move)\b/.test(text)) {
+    const currentRows = [...new Set(currentSeats.map(s => s.row_no).filter(Boolean))];
+    const currentSeatIds = currentSeats.map(s => s.seat_id).filter(Boolean);
+    if (currentRows.length > 0) preference.avoid_rows = currentRows;
+    if (currentSeatIds.length > 0) preference.avoid_seat_ids = currentSeatIds;
+  }
+
+  return { hasSeatRequest: asksForSeats, preference };
+}
+
+function seatSortValue(seat, preference = {}, rowRank = new Map(), totalRows = 1) {
+  let score = 0;
+  const seatTypeRank = { VIP: 0, Premium: 1, Regular: 2 };
+  const rank = rowRank.get(seat.row_no) ?? 0;
+
+  if (preference.avoid_seat_ids?.includes(seat.seat_id)) score += 100000;
+  if (preference.avoid_rows?.includes(seat.row_no)) score += 30000;
+  if (preference.row_no) score += seat.row_no === preference.row_no ? 0 : 50000;
+  if (preference.seat_type) score += seat.seat_type === preference.seat_type ? 0 : 25000;
+
+  if (preference.row_zone === 'front') score += rank * 100;
+  else if (preference.row_zone === 'back') score += (totalRows - rank) * 100;
+  else if (preference.row_zone === 'middle') score += Math.abs(rank - ((totalRows - 1) / 2)) * 100;
+  else score += (seatTypeRank[seat.seat_type] ?? 3) * 100;
+
+  score += rank;
+  score += parseInt(seat.seat_no, 10) || 0;
+  return score;
+}
+
+function chooseSeatsByPreference(availableSeats, quantity, preference = {}) {
+  const rows = [...new Set(availableSeats.map(s => s.row_no))].sort();
+  const rowRank = new Map(rows.map((row, index) => [row, index]));
+  const totalRows = Math.max(rows.length, 1);
+  const sortSeats = seats => [...seats].sort((a, b) =>
+    seatSortValue(a, preference, rowRank, totalRows) - seatSortValue(b, preference, rowRank, totalRows)
+  );
+
+  const rowGroups = rows.map(row => ({
+    row,
+    seats: sortSeats(availableSeats.filter(s => s.row_no === row))
+  })).sort((a, b) =>
+    seatSortValue(a.seats[0], preference, rowRank, totalRows) - seatSortValue(b.seats[0], preference, rowRank, totalRows)
+  );
+
+  const wantsTogether = preference.keep_together || preference.row_no || preference.row_zone || preference.avoid_rows?.length;
+  if (wantsTogether) {
+    const sameRow = rowGroups.find(group => group.seats.length >= quantity);
+    if (sameRow) return sameRow.seats.slice(0, quantity);
+  }
+
+  return sortSeats(availableSeats).slice(0, quantity);
+}
+
+function buildSeatPreferenceClarification(intent, currentSeats = []) {
+  const currentRows = [...new Set(currentSeats.map(s => s.row_no).filter(Boolean))];
+  const currentSeatIds = currentSeats.map(s => s.seat_id).filter(Boolean);
+  const basePreference = {
+    avoid_rows: currentRows,
+    avoid_seat_ids: currentSeatIds,
+    keep_together: true
+  };
+  const optionValues = {
+    'Back row': { seat_preference: { ...basePreference, row_zone: 'back' } },
+    'Middle row': { seat_preference: { ...basePreference, row_zone: 'middle' } },
+    'Front row': { seat_preference: { ...basePreference, row_zone: 'front' } },
+    'VIP seats': { seat_preference: { ...basePreference, seat_type: 'VIP' } },
+    'Premium seats': { seat_preference: { ...basePreference, seat_type: 'Premium' } },
+    'Regular seats': { seat_preference: { ...basePreference, seat_type: 'Regular' } },
+    'Any different seats': { seat_preference: basePreference },
+  };
+  return {
+    type: 'clarify',
+    message: 'Sure. What kind of seats should I try instead?',
+    options: Object.keys(optionValues),
+    context: buildOptionContext(normalizeBotIntent(intent), 'seat_preference', optionValues)
+  };
 }
 
 // ---------------------------------------------------------
@@ -1546,6 +1763,8 @@ app.post('/api/autonomous-agent', async (req, res) => {
     let aiAssistantMessage = null;
     let aiMarkedOutOfScope = false;
     let unsupportedActorFilter = false;
+    let aiExtractedBookingIntent = false;
+    let seatPreferenceUpdated = false;
 
     const selectedOption = isOption && promptText ? selectedOptionFromContext(intent, promptText) : null;
     if (selectedOption?.action === 'checkout') {
@@ -1594,6 +1813,8 @@ app.post('/api/autonomous-agent', async (req, res) => {
       delete intent.quantity;
       delete intent.quantity_confirmed;
       intent.current_offset = 0;
+    } else if (selectedOption?.action === 'change_seats') {
+      return res.json(buildSeatPreferenceClarification(intent, intent.checkoutPayload?.selectedSeats || []));
     } else if (selectedOption) {
       intent = mergePresent(normalizeBotIntent(intent), selectedOption);
       intent = normalizeBotIntent(intent);
@@ -1610,6 +1831,38 @@ app.post('/api/autonomous-agent', async (req, res) => {
         !/\b(more|next|other)\b/.test(lowerPrompt);
       if (explicitReset || newSearchRequest) {
         intent = {};
+      }
+
+      if (!isOption && clarificationField === 'seat_preference') {
+        const currentSeats = intent.checkoutPayload?.selectedSeats || [];
+        const seatRequest = inferSeatPreference(promptText, currentSeats);
+        if (seatRequest.hasSeatRequest) {
+          intent = mergePresent(normalizeBotIntent(intent), { seat_preference: seatRequest.preference });
+          clarificationField = null;
+          seatPreferenceUpdated = true;
+        }
+      }
+
+      if (!isOption && clarificationField === 'checkout_confirmation') {
+        const currentSeats = intent.checkoutPayload?.selectedSeats || [];
+        const seatRequest = inferSeatPreference(promptText, currentSeats);
+        const hasSpecificSeatPreference = Boolean(
+          seatRequest.preference.row_zone ||
+          seatRequest.preference.row_no ||
+          seatRequest.preference.seat_type ||
+          /\b(different|other|another)\b/i.test(promptText)
+        );
+        if (seatRequest.hasSeatRequest) {
+          if (!hasSpecificSeatPreference) {
+            return res.json(buildSeatPreferenceClarification(intent, currentSeats));
+          }
+          intent = mergePresent(normalizeBotIntent(intent), { seat_preference: seatRequest.preference });
+          clarificationField = null;
+          seatPreferenceUpdated = true;
+        } else if (isNewSearchDuringConfirmation(promptText)) {
+          intent = clearSelectedBookingFromIntent(intent);
+          clarificationField = null;
+        }
       }
 
       const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -1650,6 +1903,18 @@ If the user changes their mind, put the corrected value in the relevant field. I
           aiAssistantMessage = aiIntent.assistant_message || null;
           aiMarkedOutOfScope = Boolean(aiIntent.out_of_scope);
           unsupportedActorFilter = Boolean(aiIntent.actor_name);
+          aiExtractedBookingIntent = Boolean(
+            aiIntent.movie_title ||
+            aiIntent.city ||
+            aiIntent.quantity ||
+            aiIntent.snack ||
+            aiIntent.genre ||
+            aiIntent.time_of_day ||
+            aiIntent.date ||
+            aiIntent.language ||
+            aiIntent.cinema_name ||
+            aiIntent.sort_preference
+          );
           if (aiIntent.reset) intent = {};
           intent = mergePresent(normalizeBotIntent(intent), {
             movie_title: aiIntent.movie_title,
@@ -1678,26 +1943,27 @@ If the user changes their mind, put the corrected value in the relevant field. I
         local.intent.date ||
         local.intent.snack ||
         local.intent.genre ||
-        local.intent.language
+        local.intent.language ||
+        local.intent.cinema_name ||
+        local.intent.quantity
       );
       
-      const isGreeting = /^(hi|hello|hey|greetings|howdy)(?:\s+there)?$/i.test(promptText.trim());
+      const isGreeting = /^(hi|hello|hey|greetings|howdy|namaste|om sai ram|sai ram|hare krishna)(?:\s+there)?[!. ]*$/i.test(promptText.trim());
       if (isGreeting) {
-         return res.json({ type: 'greeting', message: 'Hello! I am the ShowsNow Concierge. I can help you find movies and book tickets. What would you like to watch?' });
+         return res.json({ type: 'greeting', message: aiAssistantMessage || 'Hello! I am the ShowsNow Concierge. I can help you find movies and book tickets. What would you like to watch?' });
       }
 
       const isConversational = /^(are you|who are|what are|can you|help)\b/i.test(promptText.trim());
+      const freshBookingIntent = hasBookingIntent(promptText) || meaningfulLocalIntent || aiExtractedBookingIntent || seatPreferenceUpdated;
       
-      const promptIsInScope = !aiMarkedOutOfScope && (
-        hasBookingIntent(promptText) ||
-        meaningfulLocalIntent ||
-        Boolean(clarificationField) ||
-        isConversational ||
-        Object.values(normalizeBotIntent(intent)).some(isPresent)
-      );
+      const promptIsInScope = freshBookingIntent || (!aiMarkedOutOfScope && isConversational);
       if (!promptIsInScope) {
-        return res.json({ type: 'out_of_scope', message: BOT_OUT_OF_SCOPE_MESSAGE });
+        return res.json({
+          type: aiAssistantMessage ? 'greeting' : 'out_of_scope',
+          message: aiAssistantMessage || BOT_OUT_OF_SCOPE_MESSAGE
+        });
       }
+      if (freshBookingIntent) clarificationField = null;
 
       if (unsupportedActorFilter || ACTOR_FILTER_PATTERN.test(promptText)) {
         return res.json({
@@ -1726,9 +1992,6 @@ If the user changes their mind, put the corrected value in the relevant field. I
         });
       }
 
-      if (clarificationField && !local.extractedSomething) {
-        intent[clarificationField] = promptText;
-      }
       delete local.intent.movie_options;
       
       if (local.intent.option_offset) {
@@ -1805,9 +2068,12 @@ If the user changes their mind, put the corrected value in the relevant field. I
       paramIdx++;
     }
     if (intent.language) {
-      sql += ` AND m.language ILIKE $${paramIdx}`;
-      params.push(`%${intent.language}%`);
-      paramIdx++;
+      const languageTerms = languageSearchTerms(intent.language);
+      const languageClauses = languageTerms.map(term => {
+        params.push(`%${term}%`);
+        return `m.language ILIKE $${paramIdx++}`;
+      });
+      sql += ` AND (${languageClauses.join(' OR ')})`;
     }
     if (intent.genre) {
       sql += ` AND m.genre ILIKE $${paramIdx}`;
@@ -2008,14 +2274,13 @@ If the user changes their mind, put the corrected value in the relevant field. I
       ORDER BY
         CASE WHEN seat_type = 'VIP' THEN 1 WHEN seat_type = 'Premium' THEN 2 ELSE 3 END ASC,
         row_no ASC, seat_no ASC
-      LIMIT $3
-    `, [bestShow.screen_id, bestShow.show_id, intent.quantity]);
+    `, [bestShow.screen_id, bestShow.show_id]);
 
     if (seatRes.rows.length < intent.quantity) {
       return res.json({ type: 'error', message: 'Not enough seats are available right now.' });
     }
 
-    const selectedSeats = seatRes.rows;
+    const selectedSeats = chooseSeatsByPreference(seatRes.rows, intent.quantity, intent.seat_preference || {});
     const basePrice = parseFloat(bestShow.base_price);
     const surgeMultiplier = parseFloat(bestShow.surge_multiplier) || 1.0;
     const totalTicketPrice = selectedSeats.reduce((sum, s) => sum + (basePrice * parseFloat(s.price_multiplier) * surgeMultiplier), 0);
@@ -2026,15 +2291,8 @@ If the user changes their mind, put the corrected value in the relevant field. I
       if (snRes.rows.length > 0) preCartSnacks[snRes.rows[0].id] = 1;
     }
 
-    const finalDateObj = new Date(bestShow.show_time);
-    const today = new Date();
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    
-    const isToday = finalDateObj.toDateString() === today.toDateString();
-    const isTomorrow = finalDateObj.toDateString() === tomorrow.toDateString();
-    const datePrefix = isToday ? 'Today' : isTomorrow ? 'Tomorrow' : finalDateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const timeString = `${finalDateObj.getHours() % 12 || 12}:${finalDateObj.getMinutes().toString().padStart(2, '0')} ${finalDateObj.getHours() >= 12 ? 'pm' : 'am'}`;
+    const datePrefix = showDateLabel(bestShow.show_time);
+    const timeString = formatTimeInAppZone(bestShow.show_time);
 
     const checkoutPayload = {
       show_id: bestShow.show_id,
@@ -2045,9 +2303,10 @@ If the user changes their mind, put the corrected value in the relevant field. I
       preCartSnacks
     };
     const selectedSeatLabels = selectedSeats.map(s => `${s.row_no}${s.seat_no}`).join(', ');
-    const confirmOptions = [BOT_CHECKOUT_CONFIRM_LABEL, 'Change movie', 'Change cinema', 'Change time', 'Change tickets'];
+    const confirmOptions = [BOT_CHECKOUT_CONFIRM_LABEL, 'Change seats', 'Change movie', 'Change cinema', 'Change time', 'Change tickets'];
     const confirmValues = {
       [BOT_CHECKOUT_CONFIRM_LABEL]: { action: 'checkout', checkoutPayload },
+      'Change seats': { action: 'change_seats' },
       'Change movie': { action: 'change_movie' },
       'Change cinema': { action: 'change_cinema' },
       'Change time': { action: 'change_time' },
