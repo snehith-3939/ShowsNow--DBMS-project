@@ -14,15 +14,44 @@ const AutonomousBot = () => {
   
   const navigate = useNavigate();
   const chatEndRef = useRef(null);
+  const chatBodyRef = useRef(null);
+  const [isPinnedToBottom, setIsPinnedToBottom] = useState(true);
 
   useEffect(() => {
-    if (chatEndRef.current) {
+    if (showAiPanel && isPinnedToBottom && chatEndRef.current) {
       chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [messages, showAiPanel]);
+  }, [messages, showAiPanel, isPinnedToBottom]);
+
+  const handleChatScroll = () => {
+    const el = chatBodyRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setIsPinnedToBottom(distanceFromBottom < 80);
+  };
+
+  const holdSeatsForPayload = async (payload) => {
+    if (!token || !payload?.show_id || !payload?.selectedSeats?.length) return { ok: true };
+    const seatIds = payload.preSelectedSeatIds || payload.selectedSeats.map(s => s.seat_id);
+    const res = await fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/seat-holds', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ show_id: payload.show_id, seat_ids: seatIds })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return { ok: false, message: data.error || 'Those seats are no longer available. Please choose another showtime.' };
+    return { ok: true };
+  };
 
   const sendRequest = async (userText, currentContext, isOption = false) => {
     setLoading(true);
+    setIsPinnedToBottom(true);
+    const requestHistory = [...messages, { sender: 'user', text: userText }]
+      .slice(-12)
+      .map(({ sender, text }) => ({ sender, text }));
     setMessages(prev => [...prev, { sender: 'user', text: userText }]);
     setPrompt('');
 
@@ -33,9 +62,9 @@ const AutonomousBot = () => {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         },
-        body: JSON.stringify({ prompt: userText, context: mergedContext, isOption })
+        body: JSON.stringify({ prompt: userText, context: mergedContext, isOption, history: requestHistory })
       });
       const data = await res.json();
       
@@ -45,7 +74,7 @@ const AutonomousBot = () => {
         return;
       }
 
-      if (data.type === 'clarify') {
+      if (data.type === 'clarify' || data.type === 'confirm_checkout') {
         setMessages(prev => [...prev, { 
           sender: 'bot', 
           text: data.message, 
@@ -62,11 +91,18 @@ const AutonomousBot = () => {
         setMessages(prev => [...prev, { sender: 'bot', text: data.message }]);
       } else if (data.type === 'out_of_scope' || data.type === 'greeting') {
         setMessages(prev => [...prev, { sender: 'bot', text: data.message }]);
-      } else if (data.payload) {
+      } else if (data.type === 'checkout' && data.payload) {
+        const holdResult = await holdSeatsForPayload(data.payload);
+        if (!holdResult.ok) {
+          setMessages(prev => [...prev, { sender: 'bot', text: holdResult.message }]);
+          setLoading(false);
+          return;
+        }
+        setContext(null);
         setMessages(prev => [...prev, { sender: 'bot', text: data.message || 'Great, I found seats for you. Taking you to checkout now...' }]);
         setTimeout(() => {
           setShowAiPanel(false);
-          navigate('/checkout', { state: data.payload.checkoutPayload || data.payload });
+          navigate('/checkout', { state: data.payload });
         }, 1000);
       }
     } catch {
@@ -120,7 +156,25 @@ const AutonomousBot = () => {
             <span style={{ cursor: 'pointer', fontSize: '1.2rem', padding: '0 8px' }} onClick={() => setShowAiPanel(false)}>✕</span>
           </div>
           
-          <div className="ai-chat-body" style={{ flex: 1, padding: '1.5rem', overflowY: 'auto', background: 'rgba(10,10,15,0.6)', display: 'flex', flexDirection: 'column', gap: '16px', height: '350px' }}>
+          <div
+            ref={chatBodyRef}
+            className="ai-chat-body"
+            onScroll={handleChatScroll}
+            onWheel={(e) => e.stopPropagation()}
+            onTouchMove={(e) => e.stopPropagation()}
+            style={{
+              flex: '1 1 auto',
+              minHeight: 0,
+              padding: '1.5rem',
+              overflowY: 'auto',
+              background: 'rgba(10,10,15,0.6)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+              height: 'min(60vh, 430px)',
+              maxHeight: 'min(60vh, 430px)'
+            }}
+          >
             {messages.map((m, i) => (
               <div key={i} style={{ alignSelf: m.sender === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%', flexShrink: 0 }}>
                 <div style={{

@@ -85,7 +85,9 @@ async function getLoyaltyBalance(db, userId, earnedBefore = null) {
 }
 
 const BOT_OUT_OF_SCOPE_MESSAGE = 'I can only help with booking movie tickets on ShowsNow. Try asking me to find a movie, showtime, seats, or snacks.';
+const BOT_CHECKOUT_CONFIRM_LABEL = 'Continue to checkout';
 const BOOKING_INTENT_PATTERN = /\b(book|booking|ticket|tickets|tix|movie|movies|show|shows|showtime|showtimes|cinema|cinemas|seat|seats|watch|playing|popcorn|snack|snacks|coke|pepsi|nachos)\b/i;
+const ACTOR_FILTER_PATTERN = /\b(actor|actress|actors|actresses|cast|starring|starred|featuring|hero|heroine)\b/i;
 const CITY_ALIASES = new Map([
   ['bombay', 'Mumbai'],
   ['mumbai', 'Mumbai'],
@@ -235,6 +237,158 @@ async function extractLocalBookingIntent(promptText) {
   }
 
   return { intent, extractedSomething };
+}
+
+function normalizeOptionKey(value = '') {
+  return String(value).trim().toLowerCase();
+}
+
+function isPresent(value) {
+  return value !== undefined && value !== null && value !== '' && !(Array.isArray(value) && value.length === 0);
+}
+
+function mergePresent(base, update = {}) {
+  const merged = { ...base };
+  for (const [key, value] of Object.entries(update)) {
+    if (isPresent(value)) merged[key] = value;
+  }
+  return merged;
+}
+
+function mergeMissing(base, update = {}) {
+  const merged = { ...base };
+  for (const [key, value] of Object.entries(update)) {
+    if (!isPresent(merged[key]) && isPresent(value)) merged[key] = value;
+  }
+  return merged;
+}
+
+function buildOptionContext(baseIntent, clarificationField, optionValues = {}) {
+  const optionMap = {};
+  for (const [label, value] of Object.entries(optionValues)) {
+    optionMap[label] = value;
+    optionMap[normalizeOptionKey(label)] = value;
+  }
+  return {
+    ...baseIntent,
+    clarification_field: clarificationField,
+    option_map: optionMap,
+  };
+}
+
+function addDays(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function toIsoDate(date) {
+  return date.toISOString().split('T')[0];
+}
+
+function getNextWeekdayDate(dayName) {
+  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const target = days.indexOf(dayName);
+  if (target === -1) return null;
+  const today = new Date();
+  const diff = (target - today.getDay() + 7) % 7 || 7;
+  return toIsoDate(addDays(today, diff));
+}
+
+function parseDateIntent(dateValue) {
+  if (!dateValue) return null;
+  const text = String(dateValue).trim().toLowerCase();
+  if (text === 'today' || text === 'tonight') return toIsoDate(new Date());
+  if (text === 'tomorrow') return toIsoDate(addDays(new Date(), 1));
+  if (text === 'weekend') {
+    const today = new Date();
+    const saturdayDiff = (6 - today.getDay() + 7) % 7 || 7;
+    return toIsoDate(addDays(today, saturdayDiff));
+  }
+  const weekday = text.match(/\b(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/);
+  if (weekday) return getNextWeekdayDate(weekday[1]);
+  const iso = text.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+  if (iso) return iso[1];
+  const parsed = new Date(dateValue);
+  if (!Number.isNaN(parsed.getTime())) return toIsoDate(parsed);
+  return null;
+}
+
+function parseTimeIntent(timeValue) {
+  if (!timeValue) return null;
+  const text = String(timeValue).trim().toLowerCase();
+  const dropdownMatch = text.match(/^(today|tomorrow|[a-z]{3}\s\d{1,2}),\s*(\d{1,2}):(\d{2})\s*(am|pm)$/i);
+  if (dropdownMatch) {
+    let hour = parseInt(dropdownMatch[2], 10);
+    const min = dropdownMatch[3];
+    const ampm = dropdownMatch[4].toLowerCase();
+    if (ampm === 'pm' && hour < 12) hour += 12;
+    if (ampm === 'am' && hour === 12) hour = 0;
+    return `${hour.toString().padStart(2, '0')}:${min}`;
+  }
+
+  const specificTimeWithColon = text.match(/(\d{1,2}):(\d{2})\s*(am|pm)?/i);
+  const specificTimeWithoutColon = text.match(/\b(\d{1,2})\s*(am|pm)\b/i);
+  if (specificTimeWithColon) {
+    let hour = parseInt(specificTimeWithColon[1], 10);
+    const min = specificTimeWithColon[2];
+    const ampm = specificTimeWithColon[3] ? specificTimeWithColon[3].toLowerCase() : null;
+    if (ampm === 'pm' && hour < 12) hour += 12;
+    if (ampm === 'am' && hour === 12) hour = 0;
+    if (!ampm) return null;
+    return `${hour.toString().padStart(2, '0')}:${min}`;
+  }
+  if (specificTimeWithoutColon) {
+    let hour = parseInt(specificTimeWithoutColon[1], 10);
+    const ampm = specificTimeWithoutColon[2].toLowerCase();
+    if (ampm === 'pm' && hour < 12) hour += 12;
+    if (ampm === 'am' && hour === 12) hour = 0;
+    return `${hour.toString().padStart(2, '0')}:00`;
+  }
+  if (text === 'morning') return '10:00';
+  if (text === 'afternoon') return '14:00';
+  if (text === 'evening' || text === 'tonight') return '18:00';
+  if (text === 'night') return '20:00';
+  return null;
+}
+
+function formatShowOptionTime(show) {
+  const d = new Date(show.show_time);
+  const today = new Date();
+  const tomorrow = addDays(today, 1);
+  const isToday = d.toDateString() === today.toDateString();
+  const isTomorrow = d.toDateString() === tomorrow.toDateString();
+  const datePrefix = isToday ? 'Today' : isTomorrow ? 'Tomorrow' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${datePrefix}, ${d.getHours() % 12 || 12}:${d.getMinutes().toString().padStart(2, '0')} ${d.getHours() >= 12 ? 'pm' : 'am'}`;
+}
+
+function selectedOptionFromContext(context, promptText) {
+  const optionMap = context?.option_map || {};
+  return optionMap[promptText] || optionMap[normalizeOptionKey(promptText)] || null;
+}
+
+function sanitizeBotContext(intent = {}) {
+  const {
+    option_map,
+    clarification_field,
+    checkoutPayload,
+    assistant_message,
+    out_of_scope,
+    missing_fields,
+    user_wants_checkout,
+    reset,
+    ...rest
+  } = intent;
+  return rest;
+}
+
+function showDateLabel(showTime) {
+  const d = new Date(showTime);
+  const today = new Date();
+  const tomorrow = addDays(today, 1);
+  if (d.toDateString() === today.toDateString()) return 'Today';
+  if (d.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 // ---------------------------------------------------------
@@ -1358,38 +1512,88 @@ app.post('/api/bookings/:id/cancel', authenticateToken, async (req, res) => {
   }
 });
 
-// Autonomous booking assistant. Uses Gemini for extraction when configured,
-// with a deterministic local parser and hard out-of-scope boundary.
+// Autonomous booking assistant. Gemini handles conversation understanding;
+// database-backed option maps keep booking choices exact and safe.
 app.post('/api/autonomous-agent', async (req, res) => {
   try {
-    const { prompt, context, isOption } = req.body;
+    const { prompt, context, isOption, history = [] } = req.body;
     const promptText = typeof prompt === 'string' ? prompt.trim() : '';
     if (!promptText && !context) {
       return res.json({ type: 'out_of_scope', message: BOT_OUT_OF_SCOPE_MESSAGE });
     }
 
     let intent = context ? { ...context } : {};
-    const clarificationField = context?.clarification_field;
+    let clarificationField = context?.clarification_field || null;
+    let aiAssistantMessage = null;
+    let aiMarkedOutOfScope = false;
+    let unsupportedActorFilter = false;
 
-    if (isOption && clarificationField) {
-      intent[clarificationField] = promptText;
-      delete intent.clarification_field;
+    const selectedOption = isOption && promptText ? selectedOptionFromContext(intent, promptText) : null;
+    if (selectedOption?.action === 'checkout') {
+      return res.json({
+        type: 'checkout',
+        message: 'Perfect. I am taking you to checkout now.',
+        payload: selectedOption.checkoutPayload
+      });
+    }
+
+    if (selectedOption?.action === 'more') {
+      intent = {
+        ...sanitizeBotContext(intent),
+        current_offset: selectedOption.current_offset || ((intent.current_offset || 0) + 4),
+      };
+      clarificationField = selectedOption.clarification_field || clarificationField;
+    } else if (selectedOption?.action === 'change_movie') {
+      intent = sanitizeBotContext(intent);
+      delete intent.movie_title;
+      delete intent.cinema_name;
+      delete intent.time_of_day;
+      delete intent.date;
+      delete intent.selected_show_id;
+      delete intent.movie_confirmed;
+      delete intent.cinema_confirmed;
+      delete intent.time_confirmed;
+      intent.current_offset = 0;
+    } else if (selectedOption?.action === 'change_cinema') {
+      intent = sanitizeBotContext(intent);
+      delete intent.cinema_name;
+      delete intent.time_of_day;
+      delete intent.date;
+      delete intent.selected_show_id;
+      delete intent.cinema_confirmed;
+      delete intent.time_confirmed;
+      intent.current_offset = 0;
+    } else if (selectedOption?.action === 'change_time') {
+      intent = sanitizeBotContext(intent);
+      delete intent.time_of_day;
+      delete intent.date;
+      delete intent.selected_show_id;
+      delete intent.time_confirmed;
+      intent.current_offset = 0;
+    } else if (selectedOption?.action === 'change_quantity') {
+      intent = sanitizeBotContext(intent);
+      delete intent.quantity;
+      delete intent.quantity_confirmed;
+      intent.current_offset = 0;
+    } else if (selectedOption) {
+      intent = mergePresent(sanitizeBotContext(intent), selectedOption);
+      clarificationField = null;
+    } else if (isOption && clarificationField) {
+      intent = mergePresent(sanitizeBotContext(intent), { [clarificationField]: promptText });
+      clarificationField = null;
     } else if (promptText) {
       const lowerPrompt = promptText.toLowerCase();
-      if (
-        lowerPrompt.includes('start over') || 
-        lowerPrompt.includes('cancel') ||
-        lowerPrompt.includes('find movies') ||
-        lowerPrompt.includes('movies in') ||
-        lowerPrompt.includes('show me') ||
-        lowerPrompt.includes('search')
-      ) {
+      const explicitReset = lowerPrompt.includes('start over') || lowerPrompt.includes('cancel');
+      const newSearchRequest = /^(find|search|show me)\b/.test(lowerPrompt) &&
+        /\b(movie|movies|show|shows|ticket|tickets|cinema|cinemas)\b/.test(lowerPrompt) &&
+        !/\b(more|next|other)\b/.test(lowerPrompt);
+      if (explicitReset || newSearchRequest) {
         intent = {};
       }
 
-      if (!clarificationField) {
-        const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-        const systemInstruction = `You are a movie booking assistant. Extract booking intent from the user message.
+      const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+      const systemInstruction = `You are ShowsNow Concierge, a friendly movie-ticket booking assistant.
+Use the conversation history to understand the user's latest request. Do not invent movies, cinemas, showtimes, seats, actors, or prices.
 Return ONLY valid JSON with these EXACT fields:
 - "movie_title": string or null
 - "city": string or null
@@ -1399,21 +1603,47 @@ Return ONLY valid JSON with these EXACT fields:
 - "time_of_day": string or null
 - "date": string or null
 - "language": string or null
-- "cinema_name": string or null`;
+- "cinema_name": string or null
+- "actor_name": string or null
+- "sort_preference": "earliest" or "cheapest" or "best_rating" or null
+- "assistant_message": short natural-language reply or null
+- "out_of_scope": boolean
+- "reset": boolean
 
-        if (GEMINI_API_KEY && GEMINI_API_KEY !== 'your_gemini_api_key_here') {
-          try {
-            const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-            const model = genAI.getGenerativeModel({
-              model: 'gemini-2.5-flash',
-              systemInstruction,
-              generationConfig: { responseMimeType: 'application/json', temperature: 0.1 }
-            });
-            const result = await model.generateContent(promptText);
-            intent = { ...intent, ...JSON.parse(result.response.text()) };
-          } catch (e) {
-            console.warn('Gemini intent extraction failed:', e.message);
-          }
+If the user changes their mind, put the corrected value in the relevant field. If they ask by actor/cast/star, set actor_name. If they only greet or ask what you can do, use assistant_message.`;
+
+      if (GEMINI_API_KEY && GEMINI_API_KEY !== 'your_gemini_api_key_here') {
+        try {
+          const safeHistory = Array.isArray(history)
+            ? history.slice(-12).map(m => `${m.sender === 'user' ? 'user' : 'assistant'}: ${String(m.text || '').slice(0, 500)}`)
+            : [];
+          const conversationText = [...safeHistory, `user: ${promptText}`].join('\n');
+          const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+          const model = genAI.getGenerativeModel({
+            model: 'gemini-2.5-flash',
+            systemInstruction,
+            generationConfig: { responseMimeType: 'application/json', temperature: 0.25 }
+          });
+          const result = await model.generateContent(conversationText);
+          const aiIntent = JSON.parse(result.response.text());
+          aiAssistantMessage = aiIntent.assistant_message || null;
+          aiMarkedOutOfScope = Boolean(aiIntent.out_of_scope);
+          unsupportedActorFilter = Boolean(aiIntent.actor_name);
+          if (aiIntent.reset) intent = {};
+          intent = mergePresent(sanitizeBotContext(intent), {
+            movie_title: aiIntent.movie_title,
+            city: aiIntent.city,
+            quantity: aiIntent.quantity,
+            snack: aiIntent.snack,
+            genre: aiIntent.genre,
+            time_of_day: aiIntent.time_of_day,
+            date: aiIntent.date,
+            language: aiIntent.language,
+            cinema_name: aiIntent.cinema_name,
+            sort_preference: aiIntent.sort_preference,
+          });
+        } catch (e) {
+          console.warn('Gemini booking assistant failed:', e.message);
         }
       }
 
@@ -1436,24 +1666,47 @@ Return ONLY valid JSON with these EXACT fields:
 
       const isConversational = /^(are you|who are|what are|can you|help)\b/i.test(promptText.trim());
       
-      const promptIsInScope = hasBookingIntent(promptText) || meaningfulLocalIntent || Boolean(clarificationField) || isConversational || (Object.keys(intent).length > 0);
+      const promptIsInScope = !aiMarkedOutOfScope && (
+        hasBookingIntent(promptText) ||
+        meaningfulLocalIntent ||
+        Boolean(clarificationField) ||
+        isConversational ||
+        Object.values(sanitizeBotContext(intent)).some(isPresent)
+      );
       if (!promptIsInScope) {
         return res.json({ type: 'out_of_scope', message: BOT_OUT_OF_SCOPE_MESSAGE });
       }
 
-      if (local.intent.movie_options?.length > 1 && !local.intent.movie_title) {
+      if (unsupportedActorFilter || ACTOR_FILTER_PATTERN.test(promptText)) {
+        return res.json({
+          type: 'clarify',
+          message: 'I can search ShowsNow by city, movie title, genre, language, cinema, date, time, tickets, and snacks. This database does not store actor or cast names yet, so I cannot reliably filter by actor.',
+          options: ['Action movies', 'Drama movies', 'Animation movies', 'English movies'],
+          context: buildOptionContext(sanitizeBotContext(intent), 'genre', {
+            'Action movies': { genre: 'action', current_offset: 0 },
+            'Drama movies': { genre: 'drama', current_offset: 0 },
+            'Animation movies': { genre: 'animation', current_offset: 0 },
+            'English movies': { language: 'english', current_offset: 0 },
+          })
+        });
+      }
+
+      if (local.intent.movie_options?.length > 1 && !local.intent.movie_title && !intent.movie_title) {
+        const optionValues = {};
+        for (const title of local.intent.movie_options) {
+          optionValues[title] = { movie_title: title, movie_confirmed: true, current_offset: 0 };
+        }
         return res.json({
           type: 'clarify',
           message: 'I found more than one matching movie. Which one did you mean?',
           options: local.intent.movie_options,
-          context: { ...intent, movie_options: undefined, clarification_field: 'movie_title' }
+          context: buildOptionContext(sanitizeBotContext(intent), 'movie_title', optionValues)
         });
       }
 
       if (clarificationField && !local.extractedSomething) {
         intent[clarificationField] = promptText;
       }
-      delete intent.clarification_field;
       delete local.intent.movie_options;
       
       if (local.intent.option_offset) {
@@ -1461,79 +1714,34 @@ Return ONLY valid JSON with these EXACT fields:
         delete local.intent.option_offset;
       }
       
-      intent = { ...intent, ...local.intent };
+      intent = mergeMissing(sanitizeBotContext(intent), local.intent);
 
       if (isConversational) {
-        return res.json({ type: 'greeting', message: 'I am the ShowsNow Concierge. I can help you search for movies by city, genre, or time, and book your tickets.' });
+        return res.json({ type: 'greeting', message: aiAssistantMessage || 'I am the ShowsNow Concierge. I can help you search by city, genre, language, cinema, date, and time, then prepare checkout after you confirm the exact show.' });
       }
     } else {
        // if no promptText (initial load), reset offset
        intent.current_offset = 0;
     }
 
+    intent = sanitizeBotContext(intent);
+
     if (!intent.city) {
+      const cityOptions = ['Mumbai', 'Delhi', 'Bengaluru', 'Hyderabad', 'Chennai', 'Pune'];
+      const cityValues = {};
+      for (const city of cityOptions) {
+        cityValues[city] = { city, city_confirmed: true, current_offset: 0 };
+      }
       return res.json({
         type: 'clarify',
-        message: 'Which city should I search in?',
-        options: ['Mumbai', 'Delhi', 'Bengaluru', 'Hyderabad', 'Chennai', 'Pune'],
-        context: { ...intent, clarification_field: 'city' }
+        message: aiAssistantMessage || 'Which city should I search in?',
+        options: cityOptions,
+        context: buildOptionContext(intent, 'city', cityValues)
       });
     }
 
-    let timeStr = null;
-    let exactDateStr = null;
-
-    if (intent.time_of_day) {
-      const t = String(intent.time_of_day).toLowerCase();
-      
-      const dropdownMatch = t.match(/^(today|tomorrow|[a-z]{3}\s\d{1,2}),\s*(\d{1,2}):(\d{2})\s*(am|pm)$/i);
-      if (dropdownMatch) {
-        let datePart = dropdownMatch[1].toLowerCase();
-        let hour = parseInt(dropdownMatch[2], 10);
-        let min = dropdownMatch[3];
-        let ampm = dropdownMatch[4].toLowerCase();
-        if (ampm === 'pm' && hour < 12) hour += 12;
-        if (ampm === 'am' && hour === 12) hour = 0;
-        timeStr = `${hour.toString().padStart(2, '0')}:${min}`;
-        
-        if (datePart === 'today') exactDateStr = 'CURRENT_DATE';
-        else if (datePart === 'tomorrow') exactDateStr = 'CURRENT_DATE + INTERVAL \'1 day\'';
-        else {
-          const d = new Date(`${datePart} ${new Date().getFullYear()}`);
-          exactDateStr = `'${d.toISOString().split('T')[0]}'`;
-        }
-      } else {
-        const specificTimeWithColon = t.match(/(\d{1,2}):(\d{2})\s*(am|pm)?/i);
-        const specificTimeWithoutColon = t.match(/(\d{1,2})\s*(am|pm)/i);
-
-        if (specificTimeWithColon) {
-          let hour = parseInt(specificTimeWithColon[1], 10);
-          let min = specificTimeWithColon[2];
-          let ampm = specificTimeWithColon[3] ? specificTimeWithColon[3].toLowerCase() : null;
-          
-          if (!ampm && hour < 12) {
-            hour += 12;
-          } else if (ampm === 'pm' && hour < 12) {
-            hour += 12;
-          } else if (ampm === 'am' && hour === 12) {
-            hour = 0;
-          }
-          timeStr = `${hour.toString().padStart(2, '0')}:${min}`;
-        } else if (specificTimeWithoutColon) {
-          let hour = parseInt(specificTimeWithoutColon[1], 10);
-          let ampm = specificTimeWithoutColon[2].toLowerCase();
-          if (ampm === 'pm' && hour < 12) hour += 12;
-          if (ampm === 'am' && hour === 12) hour = 0;
-          timeStr = `${hour.toString().padStart(2, '0')}:00`;
-        } else if (t === 'morning') timeStr = '10:00';
-        else if (t === 'afternoon') timeStr = '14:00';
-        else if (t === 'evening' || t === 'tonight') timeStr = '18:00';
-        else if (t === 'night') timeStr = '20:00';
-      }
-    }
-
-    if (intent.date === 'today' && !exactDateStr) exactDateStr = 'CURRENT_DATE';
-    if (intent.date === 'tomorrow' && !exactDateStr) exactDateStr = 'CURRENT_DATE + INTERVAL \'1 day\'';
+    const timeStr = parseTimeIntent(intent.time_of_day);
+    const exactDateStr = parseDateIntent(intent.date);
 
     const params = [];
     let sql = `
@@ -1550,6 +1758,11 @@ Return ONLY valid JSON with these EXACT fields:
     `;
 
     let paramIdx = 1;
+    if (intent.selected_show_id) {
+      sql += ` AND s.show_id = $${paramIdx}`;
+      params.push(intent.selected_show_id);
+      paramIdx++;
+    }
     if (intent.city) {
       sql += ` AND c.city ILIKE $${paramIdx}`;
       params.push(`%${intent.city}%`);
@@ -1570,21 +1783,27 @@ Return ONLY valid JSON with these EXACT fields:
       params.push(`%${intent.language}%`);
       paramIdx++;
     }
-
-    if (exactDateStr) {
-      sql += ` AND s.show_time::date = ${exactDateStr}::date`;
-    }
-
-    const orderClauses = [];
     if (intent.genre) {
-      orderClauses.push(`(CASE WHEN m.genre ILIKE $${paramIdx} THEN 0 ELSE 1 END) ASC`);
+      sql += ` AND m.genre ILIKE $${paramIdx}`;
       params.push(`%${intent.genre}%`);
       paramIdx++;
     }
+    if (exactDateStr) {
+      sql += ` AND s.show_time::date = $${paramIdx}::date`;
+      params.push(exactDateStr);
+      paramIdx++;
+    }
+
+    const orderClauses = [];
     if (timeStr) {
       orderClauses.push(`ABS(EXTRACT(EPOCH FROM s.show_time::time) - EXTRACT(EPOCH FROM $${paramIdx}::time)) ASC`);
       params.push(timeStr);
       paramIdx++;
+    }
+    if (intent.sort_preference === 'cheapest') {
+      orderClauses.push('(s.base_price * s.surge_multiplier) ASC');
+    } else if (intent.sort_preference === 'best_rating') {
+      orderClauses.push('m.vote_average DESC');
     }
     orderClauses.push('s.show_time ASC', 'm.vote_average DESC');
     sql += ` ORDER BY ${orderClauses.join(', ')} LIMIT 50`;
@@ -1602,7 +1821,7 @@ Return ONLY valid JSON with these EXACT fields:
       const hint = intent.movie_title || intent.genre || 'movies';
       return res.json({ 
         type: 'error', 
-        message: `I could not find ${hint} in ${intent.city}. Try another movie, city, or time.` 
+        message: `I could not find ${hint} in ${intent.city}. Try another movie, city, genre, date, or time.` 
       });
     }
 
@@ -1617,11 +1836,19 @@ Return ONLY valid JSON with these EXACT fields:
           context: { ...intent, current_offset: 0 }
         });
       }
+      const optionValues = {};
+      for (const title of opts) {
+        optionValues[title] = { movie_title: title, movie_confirmed: true, current_offset: 0 };
+      }
+      if (uniqueMovies.length > offset + 4) {
+        optionValues['More movies'] = { action: 'more', clarification_field: 'movie_title', current_offset: offset + 4 };
+        opts.push('More movies');
+      }
       return res.json({
         type: 'clarify',
-        message: uniqueMovies.length === 1 ? 'There is only one movie playing matching your search. Please select it to confirm:' : 'I found a few movies playing. Which one would you like?',
+        message: aiAssistantMessage || (uniqueMovies.length === 1 ? 'There is only one movie playing matching your search. Please select it to confirm:' : 'I found a few movies playing. Which one would you like?'),
         options: opts,
-        context: { ...intent, clarification_field: 'movie_title' }
+        context: buildOptionContext(intent, 'movie_title', optionValues)
       });
     }
 
@@ -1636,29 +1863,46 @@ Return ONLY valid JSON with these EXACT fields:
           context: { ...intent, current_offset: 0 }
         });
       }
+      const optionValues = {};
+      for (const cinema of opts) {
+        optionValues[cinema] = { cinema_name: cinema, cinema_confirmed: true, current_offset: 0 };
+      }
+      if (uniqueCinemas.length > offset + 4) {
+        optionValues['More cinemas'] = { action: 'more', clarification_field: 'cinema_name', current_offset: offset + 4 };
+        opts.push('More cinemas');
+      }
       return res.json({
         type: 'clarify',
-        message: uniqueCinemas.length === 1 ? `I found ${uniqueMovies[0]} at only one cinema. Please select it to confirm:` : `I found ${uniqueMovies[0]} at multiple cinemas. Which one do you prefer?`,
+        message: aiAssistantMessage || (uniqueCinemas.length === 1 ? `I found ${intent.movie_title || uniqueMovies[0]} at only one cinema. Please select it to confirm:` : `I found ${intent.movie_title || uniqueMovies[0]} at multiple cinemas. Which one do you prefer?`),
         options: opts,
-        context: { ...intent, clarification_field: 'cinema_name', movie_title: uniqueMovies[0] }
+        context: buildOptionContext({ ...intent, movie_title: intent.movie_title || uniqueMovies[0] }, 'cinema_name', optionValues)
       });
     }
 
-    const uniqueTimes = [...new Set(showRes.rows.map(r => {
-      const d = new Date(r.show_time);
-      const today = new Date();
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      
-      const isToday = d.toDateString() === today.toDateString();
-      const isTomorrow = d.toDateString() === tomorrow.toDateString();
-      const datePrefix = isToday ? 'Today' : isTomorrow ? 'Tomorrow' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      
-      return `${datePrefix}, ${d.getHours() % 12 || 12}:${d.getMinutes().toString().padStart(2, '0')} ${d.getHours() >= 12 ? 'pm' : 'am'}`;
-    }))];
-    if (!intent.time_of_day && uniqueTimes.length > 0) {
+    if (!intent.selected_show_id && !intent.time_confirmed && showRes.rows.length > 0) {
       const offset = intent.current_offset || 0;
-      const opts = uniqueTimes.slice(offset, offset + 4);
+      const showOptions = showRes.rows.slice(offset, offset + 4);
+      const opts = [];
+      const optionValues = {};
+      const seenLabels = new Map();
+      for (const show of showOptions) {
+        const baseLabel = formatShowOptionTime(show);
+        const count = seenLabels.get(baseLabel) || 0;
+        seenLabels.set(baseLabel, count + 1);
+        const label = count === 0 ? baseLabel : `${baseLabel} (${show.screen_name})`;
+        opts.push(label);
+        optionValues[label] = {
+          selected_show_id: show.show_id,
+          time_of_day: label,
+          date: showDateLabel(show.show_time),
+          time_confirmed: true,
+          current_offset: 0
+        };
+      }
+      if (showRes.rows.length > offset + 4) {
+        optionValues['More showtimes'] = { action: 'more', clarification_field: 'time_of_day', current_offset: offset + 4 };
+        opts.push('More showtimes');
+      }
       if (opts.length === 0) {
         return res.json({
           type: 'error',
@@ -1668,23 +1912,41 @@ Return ONLY valid JSON with these EXACT fields:
       }
       return res.json({
         type: 'clarify',
-        message: uniqueTimes.length === 1 ? 'There is only one showtime available. Please select it to confirm:' : 'I found multiple showtimes. Which time works best?',
+        message: aiAssistantMessage || (showRes.rows.length === 1 ? 'There is only one matching showtime. Please select it to confirm:' : 'I found these actual showtimes. Which exact one should I use?'),
         options: opts,
-        context: { ...intent, clarification_field: 'time_of_day', movie_title: uniqueMovies[0], cinema_name: uniqueCinemas[0] }
+        context: buildOptionContext({
+          ...intent,
+          movie_title: intent.movie_title || uniqueMovies[0],
+          cinema_name: intent.cinema_name || uniqueCinemas[0]
+        }, 'time_of_day', optionValues)
       });
     }
 
     if (!intent.quantity) {
+      const quantityValues = {
+        '1': { quantity: 1, quantity_confirmed: true },
+        '2': { quantity: 2, quantity_confirmed: true },
+        '3': { quantity: 3, quantity_confirmed: true },
+        '4': { quantity: 4, quantity_confirmed: true },
+      };
       return res.json({
         type: 'clarify',
         message: 'How many tickets do you need? (Max 10)',
         options: ['1', '2', '3', '4'],
-        context: { ...intent, clarification_field: 'quantity' }
+        context: buildOptionContext(intent, 'quantity', quantityValues)
       });
     }
-    intent.quantity = Math.min(Math.max(parseInt(intent.quantity, 10), 1), 10);
+    intent.quantity = parseInt(intent.quantity, 10);
+    if (!Number.isInteger(intent.quantity) || intent.quantity < 1) {
+      return res.json({ type: 'error', message: 'Please tell me a valid ticket count.' });
+    }
+    if (intent.quantity > 10) {
+      return res.json({ type: 'error', message: 'ShowsNow allows a maximum of 10 tickets in one booking. Please ask for 10 or fewer.' });
+    }
 
-    const bestShow = showRes.rows[0];
+    const bestShow = intent.selected_show_id
+      ? showRes.rows.find(r => r.show_id === intent.selected_show_id) || showRes.rows[0]
+      : showRes.rows[0];
     if (bestShow.available_seats < intent.quantity) {
       return res.json({
         type: 'waitlist',
@@ -1745,17 +2007,29 @@ Return ONLY valid JSON with these EXACT fields:
     const datePrefix = isToday ? 'Today' : isTomorrow ? 'Tomorrow' : finalDateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     const timeString = `${finalDateObj.getHours() % 12 || 12}:${finalDateObj.getMinutes().toString().padStart(2, '0')} ${finalDateObj.getHours() >= 12 ? 'pm' : 'am'}`;
 
+    const checkoutPayload = {
+      show_id: bestShow.show_id,
+      preSelectedSeatIds: selectedSeats.map(s => s.seat_id),
+      selectedSeats,
+      showInfo: bestShow,
+      totalTicketPrice,
+      preCartSnacks
+    };
+    const selectedSeatLabels = selectedSeats.map(s => `${s.row_no}${s.seat_no}`).join(', ');
+    const confirmOptions = [BOT_CHECKOUT_CONFIRM_LABEL, 'Change movie', 'Change cinema', 'Change time', 'Change tickets'];
+    const confirmValues = {
+      [BOT_CHECKOUT_CONFIRM_LABEL]: { action: 'checkout', checkoutPayload },
+      'Change movie': { action: 'change_movie' },
+      'Change cinema': { action: 'change_cinema' },
+      'Change time': { action: 'change_time' },
+      'Change tickets': { action: 'change_quantity' },
+    };
+
     res.json({
-      type: 'checkout',
-      message: `I found ${intent.quantity} ticket${intent.quantity === 1 ? '' : 's'} for ${bestShow.title} at ${bestShow.cinema_name} for ${datePrefix} at ${timeString}.`,
-      payload: {
-        show_id: bestShow.show_id,
-        preSelectedSeatIds: selectedSeats.map(s => s.seat_id),
-        selectedSeats,
-        showInfo: bestShow,
-        totalTicketPrice,
-        preCartSnacks
-      }
+      type: 'confirm_checkout',
+      message: `Here is the booking I found: ${intent.quantity} ticket${intent.quantity === 1 ? '' : 's'} for ${bestShow.title} at ${bestShow.cinema_name}, ${datePrefix} ${timeString}. Seats: ${selectedSeatLabels}. Ticket total: ₹${totalTicketPrice.toFixed(0)}. Should I continue to checkout?`,
+      options: confirmOptions,
+      context: buildOptionContext({ ...intent, checkoutPayload }, 'checkout_confirmation', confirmValues)
     });
   } catch (err) {
     console.error('Autonomous Agent Error:', err);
