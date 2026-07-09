@@ -181,7 +181,7 @@ const AutonomousBot = () => {
             {messages.map((m, i) => (
               <div key={i} style={{ alignSelf: m.sender === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%', flexShrink: 0 }}>
                 <div style={{
-                  background: m.sender === 'user' ? 'linear-gradient(135deg, #c8a96e, #f84464)' : 'rgba(255,255,255,0.08)',
+                  background: m.sender === 'user' ? 'linear-gradient(135deg, #d4af37, #8b6f3d)' : 'rgba(255,255,255,0.08)',
                   color: 'white',
                   padding: '12px 18px', borderRadius: '16px',
                   boxShadow: m.sender === 'user' ? '0 4px 15px rgba(200, 169, 110, 0.3)' : 'none', 
@@ -196,7 +196,7 @@ const AutonomousBot = () => {
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}>
                     {m.options.map((opt, idx) => (
                       <button key={idx} onClick={() => handleOptionClick(opt)} disabled={loading} style={{
-                        background: 'white', border: '1px solid var(--bms-red)', color: 'var(--bms-red)',
+                        background: 'rgba(212,175,55,0.08)', border: '1px solid rgba(212,175,55,0.65)', color: '#f4d98b',
                         padding: '6px 12px', borderRadius: '20px', fontSize: '0.8rem', cursor: 'pointer'
                       }}>{opt}</button>
                     ))}
@@ -212,7 +212,7 @@ const AutonomousBot = () => {
                 )}
               </div>
             ))}
-            {loading && <div style={{ alignSelf: 'flex-start', fontSize: '0.8rem', color: '#888' }}>Agent is typing...</div>}
+            {loading && <div style={{ alignSelf: 'flex-start', fontSize: '0.8rem', color: '#d4af37' }}>Checking ShowsNow...</div>}
             <div ref={chatEndRef} />
           </div>
           
@@ -226,7 +226,7 @@ const AutonomousBot = () => {
               style={{ flex: 1, padding: '12px 16px', borderRadius: '30px', background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)', outline: 'none', color: 'white', fontSize: '0.95rem' }}
             />
             <button type="submit" disabled={loading || !prompt.trim()} style={{
-              background: 'linear-gradient(135deg, #c8a96e, #f84464)', color: 'white', border: 'none',
+              background: 'linear-gradient(135deg, #d4af37, #8b6f3d)', color: '#0A0A0A', border: 'none',
               padding: '0 24px', borderRadius: '30px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.95rem',
               boxShadow: '0 4px 15px rgba(200, 169, 110, 0.4)', transition: 'transform 0.2s'
             }}

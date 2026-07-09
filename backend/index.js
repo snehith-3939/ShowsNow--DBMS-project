@@ -527,6 +527,14 @@ function isCinemaListRequest(promptText = '') {
     /\b(which|what|list|show|available|present|in)\b/.test(text);
 }
 
+function isMovieListRequest(promptText = '') {
+  const text = String(promptText).toLowerCase();
+  const hasMovieWord = /\b(movie|movies|films|film)\b/.test(text);
+  const asksToList = /\b(what|which|list|show|available|present|currently|now|running|playing)\b/.test(text);
+  const looksLikeCategoryRequest = /\bmovies\b/.test(text) && !/\b(book|ticket|tickets|seat|seats)\b/.test(text);
+  return hasMovieWord && (asksToList || looksLikeCategoryRequest);
+}
+
 function showDateLabel(showTime) {
   const today = new Date();
   const tomorrow = addDays(today, 1);
@@ -2023,8 +2031,14 @@ If the user changes their mind, put the corrected value in the relevant field. I
     }
 
     intent = normalizeBotIntent(intent);
+    const wantsMovieList = isMovieListRequest(promptText);
+    const wantsCinemaList = isCinemaListRequest(promptText);
 
-    if (!intent.city && !intent.all_cities) {
+    if (wantsMovieList && !intent.city && !intent.all_cities) {
+      intent.all_cities = true;
+    }
+
+    if (!intent.city && !intent.all_cities && !wantsCinemaList) {
       const cityOptions = ['Mumbai', 'Delhi', 'Bengaluru', 'Hyderabad', 'Chennai', 'Pune'];
       const cityValues = {};
       for (const city of cityOptions) {
@@ -2057,29 +2071,98 @@ If the user changes their mind, put the corrected value in the relevant field. I
       intent.city = cityRes.rows[0].city;
     }
 
-    if (intent.city && isCinemaListRequest(promptText)) {
+    if (wantsMovieList && !intent.movie_title) {
+      const movieParams = [];
+      let movieSql = `
+        SELECT DISTINCT m.title
+        FROM movies m
+        JOIN shows s ON m.movie_id = s.movie_id
+        JOIN screens sc ON s.screen_id = sc.screen_id
+        JOIN cinemas c ON sc.cinema_id = c.cinema_id
+        WHERE s.show_time >= (NOW() - INTERVAL '30 minutes')
+      `;
+      let movieParamIdx = 1;
+      if (intent.city) {
+        movieSql += ` AND c.city ILIKE $${movieParamIdx}`;
+        movieParams.push(`%${intent.city}%`);
+        movieParamIdx++;
+      }
+      if (intent.genre) {
+        movieSql += ` AND m.genre ILIKE $${movieParamIdx}`;
+        movieParams.push(`%${intent.genre}%`);
+        movieParamIdx++;
+      }
+      if (intent.language) {
+        const languageTerms = languageSearchTerms(intent.language);
+        const languageClauses = languageTerms.map(term => {
+          movieParams.push(`%${term}%`);
+          return `m.language ILIKE $${movieParamIdx++}`;
+        });
+        movieSql += ` AND (${languageClauses.join(' OR ')})`;
+      }
+      movieSql += ' ORDER BY m.title LIMIT 12';
+
+      const movieRes = await query(movieSql, movieParams);
+      const movieTitles = movieRes.rows.map(r => r.title);
+      if (movieTitles.length === 0) {
+        const cityLabel = intent.city || 'all cities';
+        const filterLabel = intent.genre || intent.language || 'movies';
+        return res.json({
+          type: 'error',
+          message: `I could not find ${filterLabel} currently playing in ${cityLabel}. Try another city, genre, language, or time.`
+        });
+      }
+      const optionValues = {};
+      for (const title of movieTitles) {
+        optionValues[title] = { movie_title: title, movie_confirmed: true, current_offset: 0 };
+      }
+      const cityLabel = intent.city || 'all cities';
+      const filterLabel = intent.genre ? `${intent.genre} movies` : intent.language ? `${intent.language} movies` : 'movies';
+      return res.json({
+        type: 'clarify',
+        message: `Here are ${filterLabel} currently available in ${cityLabel}: ${movieTitles.join(', ')}. Which one would you like?`,
+        options: movieTitles.slice(0, 6),
+        context: buildOptionContext(intent, 'movie_title', optionValues)
+      });
+    }
+
+    if (wantsCinemaList) {
+      if (!intent.city && !intent.all_cities) {
+        const cityOptions = ['Mumbai', 'Delhi', 'Bengaluru', 'Hyderabad', 'Chennai', 'Pune'];
+        const cityValues = {};
+        for (const city of cityOptions) {
+          cityValues[city] = { city, city_confirmed: true, current_offset: 0 };
+        }
+        return res.json({
+          type: 'clarify',
+          message: 'Which city should I list cinemas for?',
+          options: cityOptions,
+          context: buildOptionContext(intent, 'city', cityValues)
+        });
+      }
       const cinemaRes = await query(
         `SELECT name
          FROM cinemas
-         WHERE city ILIKE $1
+         WHERE ($1::varchar IS NULL OR city ILIKE $1)
          ORDER BY name
          LIMIT 12`,
-        [`%${intent.city}%`]
+        [intent.city ? `%${intent.city}%` : null]
       );
       const cinemaNames = cinemaRes.rows.map(r => r.name);
       if (cinemaNames.length === 0) {
         return res.json({
           type: 'error',
-          message: `I do not have any cinemas listed in ${intent.city} right now.`
+          message: `I do not have any cinemas listed in ${intent.city || 'all cities'} right now.`
         });
       }
       const optionValues = {};
       for (const cinema of cinemaNames) {
         optionValues[cinema] = { cinema_name: cinema, cinema_confirmed: true, current_offset: 0 };
       }
+      const cityLabel = intent.city || 'all cities';
       return res.json({
         type: 'clarify',
-        message: `These ShowsNow cinemas are available in ${intent.city}: ${cinemaNames.join(', ')}. Pick one if you want me to search shows there.`,
+        message: `These ShowsNow cinemas are available in ${cityLabel}: ${cinemaNames.join(', ')}. Pick one if you want me to search shows there.`,
         options: cinemaNames.slice(0, 6),
         context: buildOptionContext(intent, 'cinema_name', optionValues)
       });
