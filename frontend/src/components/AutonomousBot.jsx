@@ -55,7 +55,10 @@ const AutonomousBot = () => {
     setMessages(prev => [...prev, { sender: 'user', text: userText }]);
     setPrompt('');
 
-    const mergedContext = currentContext || { city: selectedCity };
+    const cityContext = selectedCity && selectedCity !== 'All'
+      ? { city: selectedCity }
+      : { all_cities: true };
+    const mergedContext = currentContext || cityContext;
 
     try {
       const res = await fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/autonomous-agent', {

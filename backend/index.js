@@ -382,6 +382,25 @@ function sanitizeBotContext(intent = {}) {
   return rest;
 }
 
+function normalizeCityValue(city) {
+  if (typeof city !== 'string') return city;
+  const trimmed = city.trim();
+  return trimmed.toLowerCase() === 'all' ? null : trimmed;
+}
+
+function normalizeBotIntent(intent = {}) {
+  const normalized = sanitizeBotContext(intent);
+  const normalizedCity = normalizeCityValue(normalized.city);
+  if (normalized.city && !normalizedCity) {
+    delete normalized.city;
+    normalized.all_cities = true;
+  } else if (normalizedCity) {
+    normalized.city = normalizedCity;
+    delete normalized.all_cities;
+  }
+  return normalized;
+}
+
 function showDateLabel(showTime) {
   const d = new Date(showTime);
   const today = new Date();
@@ -1539,12 +1558,12 @@ app.post('/api/autonomous-agent', async (req, res) => {
 
     if (selectedOption?.action === 'more') {
       intent = {
-        ...sanitizeBotContext(intent),
+        ...normalizeBotIntent(intent),
         current_offset: selectedOption.current_offset || ((intent.current_offset || 0) + 4),
       };
       clarificationField = selectedOption.clarification_field || clarificationField;
     } else if (selectedOption?.action === 'change_movie') {
-      intent = sanitizeBotContext(intent);
+      intent = normalizeBotIntent(intent);
       delete intent.movie_title;
       delete intent.cinema_name;
       delete intent.time_of_day;
@@ -1555,7 +1574,7 @@ app.post('/api/autonomous-agent', async (req, res) => {
       delete intent.time_confirmed;
       intent.current_offset = 0;
     } else if (selectedOption?.action === 'change_cinema') {
-      intent = sanitizeBotContext(intent);
+      intent = normalizeBotIntent(intent);
       delete intent.cinema_name;
       delete intent.time_of_day;
       delete intent.date;
@@ -1564,22 +1583,24 @@ app.post('/api/autonomous-agent', async (req, res) => {
       delete intent.time_confirmed;
       intent.current_offset = 0;
     } else if (selectedOption?.action === 'change_time') {
-      intent = sanitizeBotContext(intent);
+      intent = normalizeBotIntent(intent);
       delete intent.time_of_day;
       delete intent.date;
       delete intent.selected_show_id;
       delete intent.time_confirmed;
       intent.current_offset = 0;
     } else if (selectedOption?.action === 'change_quantity') {
-      intent = sanitizeBotContext(intent);
+      intent = normalizeBotIntent(intent);
       delete intent.quantity;
       delete intent.quantity_confirmed;
       intent.current_offset = 0;
     } else if (selectedOption) {
-      intent = mergePresent(sanitizeBotContext(intent), selectedOption);
+      intent = mergePresent(normalizeBotIntent(intent), selectedOption);
+      intent = normalizeBotIntent(intent);
       clarificationField = null;
     } else if (isOption && clarificationField) {
-      intent = mergePresent(sanitizeBotContext(intent), { [clarificationField]: promptText });
+      intent = mergePresent(normalizeBotIntent(intent), { [clarificationField]: promptText });
+      intent = normalizeBotIntent(intent);
       clarificationField = null;
     } else if (promptText) {
       const lowerPrompt = promptText.toLowerCase();
@@ -1605,7 +1626,7 @@ Return ONLY valid JSON with these EXACT fields:
 - "language": string or null
 - "cinema_name": string or null
 - "actor_name": string or null
-- "sort_preference": "earliest" or "cheapest" or "best_rating" or null
+- "sort_preference": "earliest" or "cheapest" or "best_rating" or "latest_release" or null
 - "assistant_message": short natural-language reply or null
 - "out_of_scope": boolean
 - "reset": boolean
@@ -1630,7 +1651,7 @@ If the user changes their mind, put the corrected value in the relevant field. I
           aiMarkedOutOfScope = Boolean(aiIntent.out_of_scope);
           unsupportedActorFilter = Boolean(aiIntent.actor_name);
           if (aiIntent.reset) intent = {};
-          intent = mergePresent(sanitizeBotContext(intent), {
+          intent = mergePresent(normalizeBotIntent(intent), {
             movie_title: aiIntent.movie_title,
             city: aiIntent.city,
             quantity: aiIntent.quantity,
@@ -1642,6 +1663,7 @@ If the user changes their mind, put the corrected value in the relevant field. I
             cinema_name: aiIntent.cinema_name,
             sort_preference: aiIntent.sort_preference,
           });
+          intent = normalizeBotIntent(intent);
         } catch (e) {
           console.warn('Gemini booking assistant failed:', e.message);
         }
@@ -1671,7 +1693,7 @@ If the user changes their mind, put the corrected value in the relevant field. I
         meaningfulLocalIntent ||
         Boolean(clarificationField) ||
         isConversational ||
-        Object.values(sanitizeBotContext(intent)).some(isPresent)
+        Object.values(normalizeBotIntent(intent)).some(isPresent)
       );
       if (!promptIsInScope) {
         return res.json({ type: 'out_of_scope', message: BOT_OUT_OF_SCOPE_MESSAGE });
@@ -1682,7 +1704,7 @@ If the user changes their mind, put the corrected value in the relevant field. I
           type: 'clarify',
           message: 'I can search ShowsNow by city, movie title, genre, language, cinema, date, time, tickets, and snacks. This database does not store actor or cast names yet, so I cannot reliably filter by actor.',
           options: ['Action movies', 'Drama movies', 'Animation movies', 'English movies'],
-          context: buildOptionContext(sanitizeBotContext(intent), 'genre', {
+          context: buildOptionContext(normalizeBotIntent(intent), 'genre', {
             'Action movies': { genre: 'action', current_offset: 0 },
             'Drama movies': { genre: 'drama', current_offset: 0 },
             'Animation movies': { genre: 'animation', current_offset: 0 },
@@ -1700,7 +1722,7 @@ If the user changes their mind, put the corrected value in the relevant field. I
           type: 'clarify',
           message: 'I found more than one matching movie. Which one did you mean?',
           options: local.intent.movie_options,
-          context: buildOptionContext(sanitizeBotContext(intent), 'movie_title', optionValues)
+          context: buildOptionContext(normalizeBotIntent(intent), 'movie_title', optionValues)
         });
       }
 
@@ -1713,8 +1735,12 @@ If the user changes their mind, put the corrected value in the relevant field. I
         intent.current_offset = (intent.current_offset || 0) + 4;
         delete local.intent.option_offset;
       }
+      if (/\b(latest|newest|new release|recent)\b/i.test(promptText)) {
+        intent.sort_preference = 'latest_release';
+      }
       
-      intent = mergeMissing(sanitizeBotContext(intent), local.intent);
+      intent = mergeMissing(normalizeBotIntent(intent), local.intent);
+      intent = normalizeBotIntent(intent);
 
       if (isConversational) {
         return res.json({ type: 'greeting', message: aiAssistantMessage || 'I am the ShowsNow Concierge. I can help you search by city, genre, language, cinema, date, and time, then prepare checkout after you confirm the exact show.' });
@@ -1724,9 +1750,9 @@ If the user changes their mind, put the corrected value in the relevant field. I
        intent.current_offset = 0;
     }
 
-    intent = sanitizeBotContext(intent);
+    intent = normalizeBotIntent(intent);
 
-    if (!intent.city) {
+    if (!intent.city && !intent.all_cities) {
       const cityOptions = ['Mumbai', 'Delhi', 'Bengaluru', 'Hyderabad', 'Chennai', 'Pune'];
       const cityValues = {};
       for (const city of cityOptions) {
@@ -1747,7 +1773,7 @@ If the user changes their mind, put the corrected value in the relevant field. I
     let sql = `
       SELECT
         s.show_id, s.show_time, s.base_price, s.surge_multiplier, s.available_seats,
-        m.title, m.poster_url, m.genre,
+        m.title, m.poster_url, m.genre, m.release_date, m.vote_average,
         c.name as cinema_name, c.city,
         sc.name as screen_name, sc.screen_id
       FROM shows s
@@ -1804,6 +1830,8 @@ If the user changes their mind, put the corrected value in the relevant field. I
       orderClauses.push('(s.base_price * s.surge_multiplier) ASC');
     } else if (intent.sort_preference === 'best_rating') {
       orderClauses.push('m.vote_average DESC');
+    } else if (intent.sort_preference === 'latest_release') {
+      orderClauses.push('m.release_date DESC NULLS LAST');
     }
     orderClauses.push('s.show_time ASC', 'm.vote_average DESC');
     sql += ` ORDER BY ${orderClauses.join(', ')} LIMIT 50`;
@@ -1819,9 +1847,10 @@ If the user changes their mind, put the corrected value in the relevant field. I
         });
       }
       const hint = intent.movie_title || intent.genre || 'movies';
+      const cityLabel = intent.city || 'all cities';
       return res.json({ 
         type: 'error', 
-        message: `I could not find ${hint} in ${intent.city}. Try another movie, city, genre, date, or time.` 
+        message: `I could not find ${hint} in ${cityLabel}. Try another movie, city, genre, date, or time.` 
       });
     }
 
