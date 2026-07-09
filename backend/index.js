@@ -1866,8 +1866,11 @@ app.post('/api/autonomous-agent', async (req, res) => {
       }
 
       const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-      const systemInstruction = `You are ShowsNow Concierge, a friendly movie-ticket booking assistant.
+const systemInstruction = `You are ShowsNow Concierge, a friendly movie-ticket booking assistant.
 Use the conversation history to understand the user's latest request. Do not invent movies, cinemas, showtimes, seats, actors, or prices.
+For every user message, first decide if it is booking-related, a correction to an existing booking flow, or normal conversation.
+For normal conversation, greetings, thanks, or short non-booking messages, set all booking fields to null, set assistant_message to a brief natural reply, and set out_of_scope to false.
+For unrelated requests you cannot help with, set assistant_message to a brief redirection back to ShowsNow movie booking.
 Return ONLY valid JSON with these EXACT fields:
 - "movie_title": string or null
 - "city": string or null
@@ -1948,12 +1951,12 @@ If the user changes their mind, put the corrected value in the relevant field. I
         local.intent.quantity
       );
       
-      const isGreeting = /^(hi|hello|hey|greetings|howdy|namaste|om sai ram|sai ram|hare krishna)(?:\s+there)?[!. ]*$/i.test(promptText.trim());
+      const isGreeting = /^(hi|hello|hey|greetings|howdy)(?:\s+there)?[!. ]*$/i.test(promptText.trim());
       if (isGreeting) {
          return res.json({ type: 'greeting', message: aiAssistantMessage || 'Hello! I am the ShowsNow Concierge. I can help you find movies and book tickets. What would you like to watch?' });
       }
 
-      const isConversational = /^(are you|who are|what are|can you|help)\b/i.test(promptText.trim());
+      const isConversational = Boolean(aiAssistantMessage) || /^(are you|who are|what are|can you|help|thanks|thank you)\b/i.test(promptText.trim());
       const freshBookingIntent = hasBookingIntent(promptText) || meaningfulLocalIntent || aiExtractedBookingIntent || seatPreferenceUpdated;
       
       const promptIsInScope = freshBookingIntent || (!aiMarkedOutOfScope && isConversational);
