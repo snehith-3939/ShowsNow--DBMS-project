@@ -521,6 +521,12 @@ function isNewSearchDuringConfirmation(promptText = '') {
   return false;
 }
 
+function isCinemaListRequest(promptText = '') {
+  const text = String(promptText).toLowerCase();
+  return /\b(theatres|theaters|cinemas|multiplexes|halls)\b/.test(text) &&
+    /\b(which|what|list|show|available|present|in)\b/.test(text);
+}
+
 function showDateLabel(showTime) {
   const today = new Date();
   const tomorrow = addDays(today, 1);
@@ -2008,7 +2014,7 @@ If the user changes their mind, put the corrected value in the relevant field. I
       intent = mergeMissing(normalizeBotIntent(intent), local.intent);
       intent = normalizeBotIntent(intent);
 
-      if (isConversational) {
+      if (isConversational && !freshBookingIntent) {
         return res.json({ type: 'greeting', message: aiAssistantMessage || 'I am the ShowsNow Concierge. I can help you search by city, genre, language, cinema, date, and time, then prepare checkout after you confirm the exact show.' });
       }
     } else {
@@ -2029,6 +2035,53 @@ If the user changes their mind, put the corrected value in the relevant field. I
         message: aiAssistantMessage || 'Which city should I search in?',
         options: cityOptions,
         context: buildOptionContext(intent, 'city', cityValues)
+      });
+    }
+
+    if (intent.city) {
+      const cityRes = await query('SELECT DISTINCT city FROM cinemas WHERE city ILIKE $1 ORDER BY city LIMIT 1', [`%${intent.city}%`]);
+      if (cityRes.rows.length === 0) {
+        const availableRes = await query('SELECT DISTINCT city FROM cinemas ORDER BY city LIMIT 8');
+        const availableCities = availableRes.rows.map(r => r.city);
+        const optionValues = {};
+        for (const city of availableCities) {
+          optionValues[city] = { city, city_confirmed: true, current_offset: 0 };
+        }
+        return res.json({
+          type: 'clarify',
+          message: `I do not have ShowsNow cinemas in ${intent.city} right now. Please choose one of the available cities.`,
+          options: availableCities,
+          context: buildOptionContext({ ...intent, city: undefined }, 'city', optionValues)
+        });
+      }
+      intent.city = cityRes.rows[0].city;
+    }
+
+    if (intent.city && isCinemaListRequest(promptText)) {
+      const cinemaRes = await query(
+        `SELECT name
+         FROM cinemas
+         WHERE city ILIKE $1
+         ORDER BY name
+         LIMIT 12`,
+        [`%${intent.city}%`]
+      );
+      const cinemaNames = cinemaRes.rows.map(r => r.name);
+      if (cinemaNames.length === 0) {
+        return res.json({
+          type: 'error',
+          message: `I do not have any cinemas listed in ${intent.city} right now.`
+        });
+      }
+      const optionValues = {};
+      for (const cinema of cinemaNames) {
+        optionValues[cinema] = { cinema_name: cinema, cinema_confirmed: true, current_offset: 0 };
+      }
+      return res.json({
+        type: 'clarify',
+        message: `These ShowsNow cinemas are available in ${intent.city}: ${cinemaNames.join(', ')}. Pick one if you want me to search shows there.`,
+        options: cinemaNames.slice(0, 6),
+        context: buildOptionContext(intent, 'cinema_name', optionValues)
       });
     }
 
