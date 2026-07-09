@@ -103,6 +103,7 @@ const LANGUAGE_ALIASES = {
   spanish: ['spanish', 'es'],
 };
 const GENRE_ALIASES = ['action', 'comedy', 'drama', 'horror', 'romance', 'thriller', 'sci-fi', 'science fiction', 'animation', 'musical'];
+const AI_QUERY_INTENTS = new Set(['movie_search', 'cinema_search', 'show_search', 'booking_checkout', 'snack_search', 'help']);
 const CITY_ALIASES = new Map([
   ['bombay', 'Mumbai'],
   ['mumbai', 'Mumbai'],
@@ -123,6 +124,11 @@ const CITY_ALIASES = new Map([
 
 function hasBookingIntent(prompt = '') {
   return BOOKING_INTENT_PATTERN.test(prompt);
+}
+
+function normalizeQueryIntent(value = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  return AI_QUERY_INTENTS.has(normalized) ? normalized : null;
 }
 
 async function extractLocalBookingIntent(promptText) {
@@ -419,6 +425,7 @@ function sanitizeBotContext(intent = {}) {
     checkoutPayload,
     assistant_message,
     out_of_scope,
+    query_intent,
     missing_fields,
     user_wants_checkout,
     reset,
@@ -533,6 +540,22 @@ function isMovieListRequest(promptText = '') {
   const asksToList = /\b(what|which|list|show|available|present|currently|now|running|playing)\b/.test(text);
   const looksLikeCategoryRequest = /\bmovies\b/.test(text) && !/\b(book|ticket|tickets|seat|seats)\b/.test(text);
   return hasMovieWord && (asksToList || looksLikeCategoryRequest);
+}
+
+function inferFallbackQueryIntent(promptText = '', intent = {}) {
+  const text = String(promptText).toLowerCase();
+  if (/\b(snack|snacks|food|popcorn|drinks|coke|pepsi|nachos)\b/.test(text) &&
+      /\b(what|which|list|show|available|present|menu|have|get)\b/.test(text)) {
+    return 'snack_search';
+  }
+  if (isCinemaListRequest(promptText)) return 'cinema_search';
+  if (isMovieListRequest(promptText) || intent.genre || intent.language || intent.sort_preference === 'latest_release') {
+    return 'movie_search';
+  }
+  if (intent.movie_title || intent.city || intent.cinema_name || intent.date || intent.time_of_day) {
+    return intent.quantity ? 'booking_checkout' : 'show_search';
+  }
+  return null;
 }
 
 function showDateLabel(showTime) {
@@ -1778,6 +1801,7 @@ app.post('/api/autonomous-agent', async (req, res) => {
     let aiMarkedOutOfScope = false;
     let unsupportedActorFilter = false;
     let aiExtractedBookingIntent = false;
+    let searchMode = null;
     let seatPreferenceUpdated = false;
 
     const selectedOption = isOption && promptText ? selectedOptionFromContext(intent, promptText) : null;
@@ -1885,7 +1909,15 @@ Use the conversation history to understand the user's latest request. Do not inv
 For every user message, first decide if it is booking-related, a correction to an existing booking flow, or normal conversation.
 For normal conversation, greetings, thanks, or short non-booking messages, set all booking fields to null, set assistant_message to a brief natural reply, and set out_of_scope to false.
 For unrelated requests you cannot help with, set assistant_message to a brief redirection back to ShowsNow movie booking.
+Use query_intent to tell the backend what database action to run:
+- "movie_search": user asks what movies are available, asks for recommendations, asks by genre/language/latest/rating, or wants movie options before choosing.
+- "cinema_search": user asks which cinemas/theatres/multiplexes are available, optionally in a city.
+- "show_search": user asks for showtimes or availability for known filters but is not ready for checkout.
+- "booking_checkout": user wants tickets and has or is giving booking details like movie, city, date, time, quantity, cinema, seats, or snacks.
+- "snack_search": user asks about snacks/food/drinks/menu.
+- "help": user asks what you can do.
 Return ONLY valid JSON with these EXACT fields:
+- "query_intent": "movie_search" or "cinema_search" or "show_search" or "booking_checkout" or "snack_search" or "help" or null
 - "movie_title": string or null
 - "city": string or null
 - "quantity": number or null
@@ -1920,7 +1952,9 @@ If the user changes their mind, put the corrected value in the relevant field. I
           aiAssistantMessage = aiIntent.assistant_message || null;
           aiMarkedOutOfScope = Boolean(aiIntent.out_of_scope);
           unsupportedActorFilter = Boolean(aiIntent.actor_name);
+          searchMode = normalizeQueryIntent(aiIntent.query_intent);
           aiExtractedBookingIntent = Boolean(
+            searchMode ||
             aiIntent.movie_title ||
             aiIntent.city ||
             aiIntent.quantity ||
@@ -1964,6 +1998,8 @@ If the user changes their mind, put the corrected value in the relevant field. I
         local.intent.cinema_name ||
         local.intent.quantity
       );
+      const intentForScope = normalizeBotIntent(mergeMissing(normalizeBotIntent(intent), local.intent));
+      searchMode = searchMode || inferFallbackQueryIntent(promptText, intentForScope);
       
       const isGreeting = /^(hi|hello|hey|greetings|howdy)(?:\s+there)?[!. ]*$/i.test(promptText.trim());
       if (isGreeting) {
@@ -1971,7 +2007,7 @@ If the user changes their mind, put the corrected value in the relevant field. I
       }
 
       const isConversational = Boolean(aiAssistantMessage) || /^(are you|who are|what are|can you|help|thanks|thank you)\b/i.test(promptText.trim());
-      const freshBookingIntent = hasBookingIntent(promptText) || meaningfulLocalIntent || aiExtractedBookingIntent || seatPreferenceUpdated;
+      const freshBookingIntent = hasBookingIntent(promptText) || meaningfulLocalIntent || aiExtractedBookingIntent || Boolean(searchMode) || seatPreferenceUpdated;
       
       const promptIsInScope = freshBookingIntent || (!aiMarkedOutOfScope && isConversational);
       if (!promptIsInScope) {
@@ -2021,6 +2057,7 @@ If the user changes their mind, put the corrected value in the relevant field. I
       
       intent = mergeMissing(normalizeBotIntent(intent), local.intent);
       intent = normalizeBotIntent(intent);
+      searchMode = searchMode || inferFallbackQueryIntent(promptText, intent);
 
       if (isConversational && !freshBookingIntent) {
         return res.json({ type: 'greeting', message: aiAssistantMessage || 'I am the ShowsNow Concierge. I can help you search by city, genre, language, cinema, date, and time, then prepare checkout after you confirm the exact show.' });
@@ -2031,11 +2068,34 @@ If the user changes their mind, put the corrected value in the relevant field. I
     }
 
     intent = normalizeBotIntent(intent);
-    const wantsMovieList = isMovieListRequest(promptText);
-    const wantsCinemaList = isCinemaListRequest(promptText);
+    searchMode = searchMode || inferFallbackQueryIntent(promptText, intent);
+    const wantsMovieList = searchMode === 'movie_search';
+    const wantsCinemaList = searchMode === 'cinema_search';
+    const wantsSnackList = searchMode === 'snack_search';
 
-    if (wantsMovieList && !intent.city && !intent.all_cities) {
+    if (searchMode === 'help') {
+      return res.json({
+        type: 'greeting',
+        message: aiAssistantMessage || 'I can search ShowsNow movies, cinemas, showtimes, genres, languages, dates, times, snacks, seats, and prepare checkout after you confirm a real show.'
+      });
+    }
+
+    if ((wantsMovieList || wantsCinemaList) && !intent.city && !intent.all_cities) {
       intent.all_cities = true;
+    }
+
+    if (wantsSnackList) {
+      const snackRes = await query('SELECT name, price FROM snacks ORDER BY price ASC, name ASC LIMIT 20');
+      if (snackRes.rows.length === 0) {
+        return res.json({ type: 'error', message: 'I do not have snack items listed right now.' });
+      }
+      const snackLabels = snackRes.rows.map(s => `${s.name} (₹${Number(s.price).toFixed(0)})`);
+      return res.json({
+        type: 'clarify',
+        message: `ShowsNow snacks currently available: ${snackLabels.join(', ')}. You can add a snack during checkout.`,
+        options: snackRes.rows.slice(0, 6).map(s => s.name),
+        context: buildOptionContext(intent, 'snack', Object.fromEntries(snackRes.rows.map(s => [s.name, { snack: s.name }])))
+      });
     }
 
     if (!intent.city && !intent.all_cities && !wantsCinemaList) {
@@ -2071,10 +2131,19 @@ If the user changes their mind, put the corrected value in the relevant field. I
       intent.city = cityRes.rows[0].city;
     }
 
+    const timeStr = parseTimeIntent(intent.time_of_day);
+    const exactDateStr = parseDateIntent(intent.date);
+
     if (wantsMovieList && !intent.movie_title) {
       const movieParams = [];
       let movieSql = `
-        SELECT DISTINCT m.title
+        SELECT
+          m.title,
+          m.genre,
+          m.language,
+          MIN(s.show_time) AS next_show,
+          MAX(m.vote_average) AS vote_average,
+          MAX(m.release_date) AS release_date
         FROM movies m
         JOIN shows s ON m.movie_id = s.movie_id
         JOIN screens sc ON s.screen_id = sc.screen_id
@@ -2100,7 +2169,25 @@ If the user changes their mind, put the corrected value in the relevant field. I
         });
         movieSql += ` AND (${languageClauses.join(' OR ')})`;
       }
-      movieSql += ' ORDER BY m.title LIMIT 12';
+      if (exactDateStr) {
+        movieSql += ` AND s.show_time::date = $${movieParamIdx}::date`;
+        movieParams.push(exactDateStr);
+        movieParamIdx++;
+      }
+      movieSql += ' GROUP BY m.title, m.genre, m.language';
+      const movieOrderClauses = [];
+      if (timeStr) {
+        movieOrderClauses.push(`MIN(ABS(EXTRACT(EPOCH FROM s.show_time::time) - EXTRACT(EPOCH FROM $${movieParamIdx}::time))) ASC`);
+        movieParams.push(timeStr);
+        movieParamIdx++;
+      }
+      if (intent.sort_preference === 'latest_release') {
+        movieOrderClauses.push('MAX(m.release_date) DESC NULLS LAST');
+      } else if (intent.sort_preference === 'best_rating') {
+        movieOrderClauses.push('MAX(m.vote_average) DESC NULLS LAST');
+      }
+      movieOrderClauses.push('MIN(s.show_time) ASC', 'm.title ASC');
+      movieSql += ` ORDER BY ${movieOrderClauses.join(', ')} LIMIT 12`;
 
       const movieRes = await query(movieSql, movieParams);
       const movieTitles = movieRes.rows.map(r => r.title);
@@ -2141,14 +2228,15 @@ If the user changes their mind, put the corrected value in the relevant field. I
         });
       }
       const cinemaRes = await query(
-        `SELECT name
+        `SELECT name, city
          FROM cinemas
          WHERE ($1::varchar IS NULL OR city ILIKE $1)
-         ORDER BY name
+         ORDER BY city, name
          LIMIT 12`,
         [intent.city ? `%${intent.city}%` : null]
       );
       const cinemaNames = cinemaRes.rows.map(r => r.name);
+      const cinemaLabels = cinemaRes.rows.map(r => intent.city ? r.name : `${r.name} (${r.city})`);
       if (cinemaNames.length === 0) {
         return res.json({
           type: 'error',
@@ -2162,14 +2250,11 @@ If the user changes their mind, put the corrected value in the relevant field. I
       const cityLabel = intent.city || 'all cities';
       return res.json({
         type: 'clarify',
-        message: `These ShowsNow cinemas are available in ${cityLabel}: ${cinemaNames.join(', ')}. Pick one if you want me to search shows there.`,
+        message: `These ShowsNow cinemas are available in ${cityLabel}: ${cinemaLabels.join(', ')}. Pick one if you want me to search shows there.`,
         options: cinemaNames.slice(0, 6),
         context: buildOptionContext(intent, 'cinema_name', optionValues)
       });
     }
-
-    const timeStr = parseTimeIntent(intent.time_of_day);
-    const exactDateStr = parseDateIntent(intent.date);
 
     const params = [];
     let sql = `
