@@ -2627,7 +2627,7 @@ async function autoGenerateShows() {
 
     // First: clean up shows that are more than 1 hour in the past (they're irrelevant)
     const deleted = await client.query(
-      "DELETE FROM shows WHERE show_time < NOW() - INTERVAL '1 hour' AND show_time NOT IN (SELECT show_id FROM tickets WHERE booking_id IS NOT NULL)"
+      "DELETE FROM shows WHERE show_time < NOW() - INTERVAL '1 hour' AND show_id NOT IN (SELECT DISTINCT show_id FROM tickets)"
     );
     if (deleted.rowCount > 0) console.log(`[Shows] Removed ${deleted.rowCount} stale past shows.`);
 
