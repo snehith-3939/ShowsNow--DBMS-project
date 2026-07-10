@@ -1,7 +1,6 @@
 import { useEffect, useState, useContext } from 'react';
 import { AppContext } from '../context/AppContext';
 import { useNavigate } from 'react-router-dom';
-import Navbar from '../components/Navbar';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -62,7 +61,6 @@ const Waitlist = () => {
 
   return (
     <>
-      <Navbar />
       <div className="main-container" style={{ maxWidth: '900px', margin: '0 auto', paddingTop: '2rem', paddingBottom: '4rem' }}>
         <h2 className="section-title" style={{ marginBottom: '0.4rem' }}>My Waitlists</h2>
         <p style={{ color: 'var(--bms-muted)', marginBottom: '2rem', fontSize: '0.9rem' }}>

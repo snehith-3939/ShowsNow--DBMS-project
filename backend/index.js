@@ -989,6 +989,29 @@ app.post('/api/admin/movies', authenticateAdmin, async (req, res) => {
 });
 
 // Add New Show
+// GET /api/admin/shows — upcoming shows with full detail for admin dashboard
+app.get('/api/admin/shows', authenticateAdmin, async (req, res) => {
+  try {
+    const { rows } = await query(`
+      SELECT s.show_id, s.show_time, s.base_price, s.available_seats,
+             m.title, m.language,
+             sc.name AS screen_name, sc.total_seats,
+             c.name AS cinema_name, c.city
+      FROM shows s
+      JOIN movies m ON s.movie_id = m.movie_id
+      JOIN screens sc ON s.screen_id = sc.screen_id
+      JOIN cinemas c ON sc.cinema_id = c.cinema_id
+      WHERE s.show_time >= NOW()
+      ORDER BY s.show_time ASC
+      LIMIT 500
+    `);
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch shows' });
+  }
+});
+
 app.post('/api/admin/shows', authenticateAdmin, async (req, res) => {
   const { movie_id, screen_id, show_time, base_price } = req.body;
   const parsedBasePrice = Number(base_price);
@@ -1119,7 +1142,33 @@ app.get('/api/movies/:id', async (req, res) => {
   }
 });
 
-// Get all cinemas
+// POST /api/movies/:id/rate — authenticated users submit a rating (1-10)
+app.post('/api/movies/:id/rate', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { rating } = req.body;
+  const parsedRating = Number(rating);
+  if (!Number.isFinite(parsedRating) || parsedRating < 1 || parsedRating > 10) {
+    return res.status(400).json({ error: 'Rating must be a number between 1 and 10' });
+  }
+  try {
+    // Update running average: new_avg = (old_avg * old_count + new_rating) / (old_count + 1)
+    const result = await query(
+      `UPDATE movies
+       SET vote_average = ROUND(((vote_average * vote_count) + $1) / (vote_count + 1), 1),
+           vote_count   = vote_count + 1
+       WHERE movie_id = $2
+       RETURNING vote_average, vote_count`,
+      [parsedRating, id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Movie not found' });
+    res.json({ success: true, vote_average: result.rows[0].vote_average, vote_count: result.rows[0].vote_count });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to submit rating' });
+  }
+});
+
+
 app.get('/api/cinemas', async (req, res) => {
   try {
     const { rows } = await query('SELECT * FROM cinemas');
@@ -2631,9 +2680,12 @@ async function autoGenerateShows() {
     );
     if (deleted.rowCount > 0) console.log(`[Shows] Removed ${deleted.rowCount} stale past shows.`);
 
-    // Then: generate future shows for all movies across all screens
-    // Slot times: 10:30am (630min), 1:30pm (810), 4:30pm (990), 7:30pm (1170)
-    // Each screen gets a deterministic ±3hr offset based on its ID so showtimes vary per cinema.
+    // Generate future shows for all movies across all screens
+    // 6 cinema-standard slot times (minutes from midnight IST):
+    //   600 = 10:00am | 750 = 12:30pm | 900 = 15:00pm
+    //   1050 = 17:30pm | 1200 = 20:00pm | 1350 = 22:30pm
+    // Each screen gets assigned 2 non-overlapping slots (deterministic, based on screen hash)
+    // so cinemas have varied showtimes without all playing at identical hours.
     const result = await client.query(`
       INSERT INTO shows (movie_id, screen_id, show_time, base_price, available_seats)
       SELECT
@@ -2641,22 +2693,40 @@ async function autoGenerateShows() {
         s.screen_id,
         (DATE_TRUNC('day', NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'
           + (d.day_offset || ' days')::INTERVAL
-          + ((slots.base_min + MOD(ABS(hashtext(m.movie_id::text || s.screen_id::text)), 180)) || ' minutes')::INTERVAL
+          + (slots.slot_min || ' minutes')::INTERVAL
         ) AS show_time,
         (200 + MOD(ABS(hashtext(m.movie_id::text)), 200))::numeric AS base_price,
         s.total_seats
       FROM movies m
       CROSS JOIN screens s
       CROSS JOIN generate_series(0, 4) AS d(day_offset)
-      CROSS JOIN (VALUES (630), (810), (990), (1170)) AS slots(base_min)
+      -- Pick 2 slots per screen using deterministic hash: slot index 0..5
+      -- Slot assignments: screen hash mod 3 → gives (slot A, slot B) pair
+      CROSS JOIN LATERAL (
+        VALUES
+          (CASE MOD(ABS(hashtext(s.screen_id::text)), 6)
+            WHEN 0 THEN 600   -- 10:00
+            WHEN 1 THEN 750   -- 12:30
+            WHEN 2 THEN 900   -- 15:00
+            WHEN 3 THEN 1050  -- 17:30
+            WHEN 4 THEN 1200  -- 20:00
+            ELSE              1350  -- 22:30
+          END),
+          (CASE MOD(ABS(hashtext(s.screen_id::text)), 6)
+            WHEN 0 THEN 1200  -- 20:00
+            WHEN 1 THEN 1350  -- 22:30
+            WHEN 2 THEN 600   -- 10:00
+            WHEN 3 THEN 750   -- 12:30
+            WHEN 4 THEN 900   -- 15:00
+            ELSE              1050  -- 17:30
+          END)
+      ) AS slots(slot_min)
       WHERE
-        -- Only for movies that have been released (or have no release date)
         (m.release_date IS NULL OR m.release_date <= (CURRENT_DATE + (d.day_offset || ' days')::INTERVAL)::date)
-        -- Only future timeslots — no point creating shows that have already passed
         AND (
           DATE_TRUNC('day', NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'
           + (d.day_offset || ' days')::INTERVAL
-          + ((slots.base_min + MOD(ABS(hashtext(m.movie_id::text || s.screen_id::text)), 180)) || ' minutes')::INTERVAL
+          + (slots.slot_min || ' minutes')::INTERVAL
         ) > NOW()
       ON CONFLICT DO NOTHING
     `);

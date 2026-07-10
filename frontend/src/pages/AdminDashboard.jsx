@@ -58,13 +58,14 @@ const AdminDashboard = () => {
       setAdminError('');
       setLoading(true);
       const headers = { Authorization: `Bearer ${token}` };
-      const [statsRes, bookingsRes, moviesRes, cinemasRes, screensRes, waitlistsRes] = await Promise.all([
+      const [statsRes, bookingsRes, moviesRes, cinemasRes, screensRes, waitlistsRes, showsRes] = await Promise.all([
         fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/admin/stats', { headers }),
         fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/admin/bookings', { headers }),
         fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/movies'),
         fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/cinemas'),
         fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/screens'),
-        fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/admin/waitlists', { headers })
+        fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/admin/waitlists', { headers }),
+        fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/admin/shows', { headers }),
       ]);
 
       const statsData = expectAdminStats(await readJsonOrThrow(statsRes, 'Admin stats'));
@@ -73,6 +74,7 @@ const AdminDashboard = () => {
       const cinemasData = expectArray(await readJsonOrThrow(cinemasRes, 'Cinemas'), 'Cinemas');
       const screensData = expectArray(await readJsonOrThrow(screensRes, 'Screens'), 'Screens');
       const waitlistsData = expectArray(await readJsonOrThrow(waitlistsRes, 'Admin waitlists'), 'Admin waitlists');
+      const showsData = expectArray(await readJsonOrThrow(showsRes, 'Admin shows'), 'Admin shows');
 
       setStats(statsData);
       setBookings(bookingsData);
@@ -80,6 +82,7 @@ const AdminDashboard = () => {
       setCinemas(cinemasData);
       setScreens(screensData);
       setWaitlists(waitlistsData);
+      setShows(showsData);
     } catch (error) {
       console.error('Failed to fetch admin data:', error);
       setAdminError(error.message);
@@ -90,10 +93,10 @@ const AdminDashboard = () => {
 
   const fetchShows = async () => {
     try {
-      // Basic fetch to populate shows for pricing rules
-      const res = await fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/movies');
-      // For a real app we'd fetch all raw shows. Since we only have /api/movies/:id/shows, we'll keep this simple.
-      // In this demo, we'll just show the UI for it.
+      const res = await fetch((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/admin/shows', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) setShows(await res.json());
     } catch (error) {
       console.error(error);
     }
@@ -149,12 +152,15 @@ const AdminDashboard = () => {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(showForm)
       });
+      const data = await res.json();
       if (res.ok) {
-        alert('Show added successfully!');
+        alert('Show scheduled successfully!');
         setShowForm({ movie_id: '', screen_id: '', show_time: '', base_price: '' });
         fetchData();
+      } else {
+        alert('Failed: ' + (data.error || 'Unknown error'));
       }
-    } catch { alert('Error adding show'); }
+    } catch (err) { alert('Error: ' + err.message); }
   };
 
   if (loading) return <div style={{ padding: '4rem', textAlign: 'center', color: 'white' }}>Loading Dashboard...</div>;
@@ -304,26 +310,54 @@ const AdminDashboard = () => {
                     <option value="">Select Movie</option>
                     {movies.map(m => <option key={m.movie_id} value={m.movie_id}>{m.title}</option>)}
                   </select>
-                  <label style={labelStyle}>Screen</label>
+                  <label style={labelStyle}>Cinema &amp; Screen</label>
                   <select style={inputStyle} value={showForm.screen_id} onChange={e => setShowForm({...showForm, screen_id: e.target.value})} required>
-                    <option value="">Select Screen</option>
-                    {screens.map(s => {
-                       const c = cinemas.find(cin => cin.cinema_id === s.cinema_id);
-                       return <option key={s.screen_id} value={s.screen_id}>{c ? c.name : ''} - {s.name}</option>;
-                    })}
+                    <option value="">Select Cinema / Screen</option>
+                    {cinemas.map(c => (
+                      <optgroup key={c.cinema_id} label={`${c.name} · ${c.city}`}>
+                        {screens.filter(s => s.cinema_id === c.cinema_id).map(s => (
+                          <option key={s.screen_id} value={s.screen_id}>{s.name} ({s.total_seats} seats)</option>
+                        ))}
+                      </optgroup>
+                    ))}
                   </select>
-                  <label style={labelStyle}>Show Time</label>
+                  <label style={labelStyle}>Date &amp; Time</label>
                   <input type="datetime-local" style={inputStyle} value={showForm.show_time} onChange={e => setShowForm({...showForm, show_time: e.target.value})} required />
                   <label style={labelStyle}>Base Price (₹)</label>
-                  <input type="number" style={inputStyle} value={showForm.base_price} onChange={e => setShowForm({...showForm, base_price: e.target.value})} required />
+                  <input type="number" min="1" style={inputStyle} value={showForm.base_price} onChange={e => setShowForm({...showForm, base_price: e.target.value})} required placeholder="e.g. 250" />
                   <button type="submit" style={submitBtnStyle}>Schedule Show</button>
                 </form>
               </div>
               <div style={cardStyle}>
-                <h3 style={{color: 'white', marginBottom: '1.5rem'}}>Global Shows Database</h3>
-                <p style={{color: 'var(--bms-muted)', fontSize: '0.9rem'}}>Upcoming shows will appear on the user's booking interface based on their selected city.</p>
-                <div style={{ padding: '2rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', color: '#888', textAlign: 'center', marginTop: '1rem' }}>
-                  Select a city on the main app to view its localized show schedules.<br/><br/><i>Admin view of all raw global shows is coming soon.</i>
+                <h3 style={{color: 'white', marginBottom: '0.5rem'}}>Upcoming Shows</h3>
+                <p style={{color: 'var(--bms-muted)', fontSize: '0.85rem', marginBottom: '1.2rem'}}>Shows scheduled for the next 5 days. Auto-generated on every server start.</p>
+                <div style={{ overflowX: 'auto', maxHeight: '480px', overflowY: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead style={{ position: 'sticky', top: 0, background: 'var(--card-bg)', zIndex: 1 }}>
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: 'var(--bms-muted)', fontSize: '0.8rem', textAlign: 'left' }}>
+                        <th style={{ padding: '10px' }}>Movie</th>
+                        <th style={{ padding: '10px' }}>Cinema · Screen</th>
+                        <th style={{ padding: '10px' }}>City</th>
+                        <th style={{ padding: '10px' }}>Time</th>
+                        <th style={{ padding: '10px', textAlign: 'right' }}>Price</th>
+                        <th style={{ padding: '10px', textAlign: 'right' }}>Seats</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {shows.length === 0 ? (
+                        <tr><td colSpan="6" style={{ padding: '20px', textAlign: 'center', color: '#555' }}>No shows loaded yet.</td></tr>
+                      ) : shows.slice(0, 100).map(s => (
+                        <tr key={s.show_id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', fontSize: '0.82rem', color: '#E5E7EB' }}>
+                          <td style={{ padding: '8px 10px', fontWeight: 500 }}>{s.title}</td>
+                          <td style={{ padding: '8px 10px', color: 'var(--bms-muted)' }}>{s.cinema_name} · {s.screen_name}</td>
+                          <td style={{ padding: '8px 10px', color: 'var(--bms-muted)' }}>{s.city}</td>
+                          <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{new Date(s.show_time).toLocaleString('en-IN', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right' }}>₹{s.base_price}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: s.available_seats < 20 ? '#f87171' : '#4ade80' }}>{s.available_seats}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
@@ -333,10 +367,17 @@ const AdminDashboard = () => {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
                <div style={cardStyle}>
                  <h3 style={{color: 'white', marginBottom: '1rem'}}>Manual Base Price Override</h3>
-                 <p style={{color: 'var(--bms-muted)', fontSize: '0.9rem', marginBottom: '2rem'}}>Use this form to manually override the base price of a specific show. The surge multiplier trigger will automatically recalculate the final price based on the new base price.</p>
+                 <p style={{color: 'var(--bms-muted)', fontSize: '0.9rem', marginBottom: '2rem'}}>Select a show and set its base ticket price. The surge pricing trigger recalculates automatically.</p>
                  <form onSubmit={handleUpdatePrice}>
-                    <label style={labelStyle}>Show ID</label>
-                    <input style={inputStyle} placeholder="Enter Show UUID" value={pricingForm.show_id} onChange={e => setPricingForm({...pricingForm, show_id: e.target.value})} required />
+                    <label style={labelStyle}>Select Show</label>
+                    <select style={inputStyle} value={pricingForm.show_id} onChange={e => setPricingForm({...pricingForm, show_id: e.target.value})} required>
+                      <option value="">Choose a show...</option>
+                      {shows.slice(0, 100).map(s => (
+                        <option key={s.show_id} value={s.show_id}>
+                          {s.title} · {s.cinema_name} · {new Date(s.show_time).toLocaleString('en-IN', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                        </option>
+                      ))}
+                    </select>
                     
                     <label style={labelStyle}>New Base Price (₹)</label>
                     <input type="number" style={inputStyle} placeholder="e.g. 250" value={pricingForm.base_price} onChange={e => setPricingForm({...pricingForm, base_price: e.target.value})} required />
@@ -365,14 +406,14 @@ const AdminDashboard = () => {
           {activeTab === 'waitlist' && (
             <div style={cardStyle}>
               <h3 style={{color: 'white', marginBottom: '1rem'}}>Active Waitlists</h3>
-              <p style={{color: 'var(--bms-muted)', fontSize: '0.9rem', marginBottom: '2rem'}}>Monitor high-demand shows. The backend waitlist engine uses FOR UPDATE SKIP LOCKED to autonomously promote users when cancellations occur.</p>
+              <p style={{color: 'var(--bms-muted)', fontSize: '0.9rem', marginBottom: '2rem'}}>Users waiting for seats in sold-out shows. The engine automatically books them when cancellations free up seats.</p>
               
               <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: 'var(--bms-muted)', fontSize: '0.85rem', textAlign: 'left' }}>
-                        <th style={{ padding: '12px' }}>Show ID</th>
-                        <th style={{ padding: '12px' }}>User ID</th>
+                        <th style={{ padding: '12px' }}>Movie · Show</th>
+                        <th style={{ padding: '12px' }}>User</th>
                         <th style={{ padding: '12px' }}>Status</th>
                         <th style={{ padding: '12px', textAlign: 'right' }}>Joined At</th>
                       </tr>
