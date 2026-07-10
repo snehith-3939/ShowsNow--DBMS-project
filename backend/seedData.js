@@ -250,22 +250,27 @@ async function seedData() {
         movieId = res.rows[0].movie_id;
       }
       
-      // Use a single SQL query to generate all shows instantly for this movie
+      // Generate shows for the next 5 days, but only for timeslots that are still in the future.
+      // This ensures stale past shows are never created.
       await client.query(`
         INSERT INTO shows (movie_id, screen_id, show_time, base_price, available_seats)
         SELECT 
             m.movie_id, 
             s.screen_id, 
-            DATE_TRUNC('day', NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata' 
+            (DATE_TRUNC('day', NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata' 
               + (d.dayOffset || ' days')::INTERVAL 
-              + ((slots.baseMin + ($2::int * 15) + MOD(ABS(hashtext(s.screen_id::text)), 180)) || ' minutes')::INTERVAL,
+              + ((slots.baseMin + ($2::int * 15) + MOD(ABS(hashtext(s.screen_id::text)), 180)) || ' minutes')::INTERVAL) AS show_time,
             FLOOR(RANDOM() * 200) + 200,
             s.total_seats
         FROM movies m
         CROSS JOIN screens s
         CROSS JOIN generate_series(0, 4) AS d(dayOffset)
         CROSS JOIN (VALUES (630), (810), (990), (1170)) AS slots(baseMin)
-        WHERE m.movie_id = $1 AND (m.release_date IS NULL OR (DATE_TRUNC('day', NOW()) + (d.dayOffset || ' days')::INTERVAL) >= m.release_date)
+        WHERE m.movie_id = $1 
+          AND (m.release_date IS NULL OR (DATE_TRUNC('day', NOW()) + (d.dayOffset || ' days')::INTERVAL) >= m.release_date)
+          AND (DATE_TRUNC('day', NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata' 
+              + (d.dayOffset || ' days')::INTERVAL 
+              + ((slots.baseMin + ($2::int * 15) + MOD(ABS(hashtext(s.screen_id::text)), 180)) || ' minutes')::INTERVAL) > NOW()
         ON CONFLICT DO NOTHING;
       `, [movieId, movieIdx]);
       movieIdx++;

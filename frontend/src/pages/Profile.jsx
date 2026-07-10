@@ -9,11 +9,11 @@ const Profile = () => {
   const [loyalty, setLoyalty] = useState(0);
   const [loading, setLoading] = useState(true);
   
-  // Modals state
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({ name: '', phone: '', city: '' });
   const [savingProfile, setSavingProfile] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState(null);
+  const [cancellingId, setCancellingId] = useState(null);
 
   const navigate = useNavigate();
 
@@ -79,6 +79,30 @@ const Profile = () => {
       alert('Error updating profile');
     } finally {
       setSavingProfile(false);
+    }
+  };
+
+  const handleCancelBooking = async (bookingId) => {
+    if (!window.confirm('Are you sure you want to cancel this booking? This cannot be undone.')) return;
+    setCancellingId(bookingId);
+    try {
+      const token = localStorage.getItem('bms_token');
+      const res = await fetch(
+        (import.meta.env.VITE_API_URL || 'http://localhost:5000') + `/api/bookings/${bookingId}/cancel`,
+        { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      const data = await res.json();
+      if (res.ok) {
+        setBookings(prev => prev.map(b =>
+          b.booking_id === bookingId ? { ...b, status: 'Cancelled' } : b
+        ));
+      } else {
+        alert(data.error || 'Failed to cancel booking.');
+      }
+    } catch {
+      alert('Network error. Please try again.');
+    } finally {
+      setCancellingId(null);
     }
   };
 
@@ -166,11 +190,32 @@ const Profile = () => {
                         <div style={{ color: 'white', fontWeight: '600' }}>{new Date(booking.show_time).toLocaleString('en-IN', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>
                         <div style={{ color: 'var(--bms-muted)', fontSize: '0.8rem', marginTop: '3px' }}>Booked on: {new Date(booking.booking_time).toLocaleDateString()}</div>
                       </div>
-                      {booking.status === 'Confirmed' && new Date(booking.show_time) > new Date() && (
-                        <button className="btn-signin" style={{ background: 'transparent', border: '1px solid var(--bms-red)', color: 'var(--bms-red)' }} onClick={() => setSelectedTicket(booking)}>
-                          View Details
-                        </button>
-                      )}
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        {booking.status === 'Confirmed' && new Date(booking.show_time) > new Date() && (
+                          <>
+                            <button
+                              className="btn-signin"
+                              style={{ background: 'transparent', border: '1px solid var(--bms-red)', color: 'var(--bms-red)' }}
+                              onClick={() => setSelectedTicket(booking)}
+                            >
+                              View Details
+                            </button>
+                            <button
+                              className="btn-signin"
+                              disabled={cancellingId === booking.booking_id}
+                              style={{
+                                background: 'transparent',
+                                border: '1px solid rgba(239,68,68,0.5)',
+                                color: '#f87171',
+                                opacity: cancellingId === booking.booking_id ? 0.6 : 1
+                              }}
+                              onClick={() => handleCancelBooking(booking.booking_id)}
+                            >
+                              {cancellingId === booking.booking_id ? 'Cancelling...' : 'Cancel Booking'}
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
 
                   </div>

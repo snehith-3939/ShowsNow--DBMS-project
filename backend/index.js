@@ -2612,22 +2612,120 @@ ${confirmedContext}`;
     res.status(500).json({ error: 'Agent failed to process request' });
   }
 });
-app.listen(PORT, () => {
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTO SHOW GENERATION
+// Runs on startup and nightly at midnight. Inserts shows for every movie/screen
+// combination for the next 5 days, skipping timeslots that have already passed.
+// Uses ON CONFLICT DO NOTHING so re-running is always safe.
+// ─────────────────────────────────────────────────────────────────────────────
+async function autoGenerateShows() {
+  console.log('[Shows] Auto-generating fresh shows...');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // First: clean up shows that are more than 1 hour in the past (they're irrelevant)
+    const deleted = await client.query(
+      "DELETE FROM shows WHERE show_time < NOW() - INTERVAL '1 hour' AND show_time NOT IN (SELECT show_id FROM tickets WHERE booking_id IS NOT NULL)"
+    );
+    if (deleted.rowCount > 0) console.log(`[Shows] Removed ${deleted.rowCount} stale past shows.`);
+
+    // Then: generate future shows for all movies across all screens
+    // Slot times: 10:30am (630min), 1:30pm (810), 4:30pm (990), 7:30pm (1170)
+    // Each screen gets a deterministic ±3hr offset based on its ID so showtimes vary per cinema.
+    const result = await client.query(`
+      INSERT INTO shows (movie_id, screen_id, show_time, base_price, available_seats)
+      SELECT
+        m.movie_id,
+        s.screen_id,
+        (DATE_TRUNC('day', NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'
+          + (d.day_offset || ' days')::INTERVAL
+          + ((slots.base_min + MOD(ABS(hashtext(m.movie_id::text || s.screen_id::text)), 180)) || ' minutes')::INTERVAL
+        ) AS show_time,
+        (200 + MOD(ABS(hashtext(m.movie_id::text)), 200))::numeric AS base_price,
+        s.total_seats
+      FROM movies m
+      CROSS JOIN screens s
+      CROSS JOIN generate_series(0, 4) AS d(day_offset)
+      CROSS JOIN (VALUES (630), (810), (990), (1170)) AS slots(base_min)
+      WHERE
+        -- Only for movies that have been released (or have no release date)
+        (m.release_date IS NULL OR m.release_date <= (CURRENT_DATE + (d.day_offset || ' days')::INTERVAL)::date)
+        -- Only future timeslots — no point creating shows that have already passed
+        AND (
+          DATE_TRUNC('day', NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'
+          + (d.day_offset || ' days')::INTERVAL
+          + ((slots.base_min + MOD(ABS(hashtext(m.movie_id::text || s.screen_id::text)), 180)) || ' minutes')::INTERVAL
+        ) > NOW()
+      ON CONFLICT DO NOTHING
+    `);
+    await client.query('COMMIT');
+    console.log(`[Shows] Done. ${result.rowCount} new show slots inserted.`);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('[Shows] Error during auto-generation:', err.message);
+  } finally {
+    client.release();
+  }
+}
+
+// Manual refresh endpoint (admin or server health check use)
+app.post('/api/shows/refresh', async (req, res) => {
+  try {
+    await autoGenerateShows();
+    res.json({ success: true, message: 'Shows refreshed.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Show refresh failed.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE waitlist entry — user can leave a waitlist they joined
+// ─────────────────────────────────────────────────────────────────────────────
+app.delete('/api/waitlist/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { user_id } = req.user;
+  try {
+    const result = await query(
+      'DELETE FROM waitlist WHERE waitlist_id = $1 AND user_id = $2 AND status = $3 RETURNING waitlist_id',
+      [id, user_id, 'Waiting']
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Waitlist entry not found or already processed.' });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Waitlist delete error:', err);
+    res.status(500).json({ error: 'Failed to remove from waitlist.' });
+  }
+});
+
+app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
 
-  // Schedule daily TMDB updates at midnight
-  cron.schedule('0 0 * * *', () => {
-    console.log('[CRON] Running daily TMDB seed script...');
-    exec('node seedData.js', (error, stdout, stderr) => {
-      if (error) {
-        console.error(`[CRON] Error running seed script: ${error.message}`);
-        return;
-      }
-      if (stderr) {
-        console.error(`[CRON] seedData stderr: ${stderr}`);
-      }
-      console.log(`[CRON] seedData output:\n${stdout}`);
+  // Generate shows immediately on startup — no stale data when app first opens
+  await autoGenerateShows();
+
+  // Nightly reseed: pulls fresh movies from TMDB and regenerates shows
+  cron.schedule('0 0 * * *', async () => {
+    console.log('[CRON] Running nightly TMDB seed + show generation...');
+    exec('node seedData.js', { cwd: __dirname }, (error, stdout, stderr) => {
+      if (error) { console.error(`[CRON] seedData error: ${error.message}`); return; }
+      if (stderr) console.error(`[CRON] seedData stderr: ${stderr}`);
+      console.log(`[CRON] seedData done:\n${stdout}`);
     });
+    // Also regenerate shows for any new movies that seedData added
+    setTimeout(() => autoGenerateShows(), 60_000);
   });
-  console.log('Daily TMDB cron scheduler initialized (runs at midnight)');
+
+  // Hourly cleanup of shows that have now passed — keeps the DB lean
+  cron.schedule('5 * * * *', () => {
+    pool.query("DELETE FROM shows WHERE show_time < NOW() - INTERVAL '1 hour' AND show_id NOT IN (SELECT DISTINCT show_id FROM tickets)")
+      .then(r => { if (r.rowCount > 0) console.log(`[CRON] Cleaned ${r.rowCount} past shows.`); })
+      .catch(e => console.error('[CRON] Show cleanup error:', e.message));
+  });
+
+  console.log('Cron schedulers initialized: midnight TMDB seed + hourly cleanup');
 });
+
