@@ -2596,11 +2596,10 @@ ${confirmedContext}`;
       'Change tickets': { action: 'change_quantity' },
     };
 
-    const checkoutFallback = `Great! ${intent.quantity} ticket${intent.quantity === 1 ? '' : 's'} for ${bestShow.title} at ${bestShow.cinema_name}, ${datePrefix} at ${timeString}. Seats: ${selectedSeatLabels}. Total: ₹${totalTicketPrice.toFixed(0)}. Shall I go ahead?`;
-    const checkoutMessage = await generateBotReply(
-      `Booking ready: ${intent.quantity} ticket(s) for "${bestShow.title}" at ${bestShow.cinema_name}, ${datePrefix} at ${timeString}. Seats: ${selectedSeatLabels}. Total: ₹${totalTicketPrice.toFixed(0)}. Ask the user to confirm or change something.`,
-      checkoutFallback
-    );
+    // IMPORTANT: Do NOT use generateBotReply here. Checkout confirmation contains financial
+    // data (price, seat labels, quantity) that must be 100% deterministic. Gemini can
+    // hallucinate numbers when rephrasing, which is unacceptable for payment confirmation.
+    const checkoutMessage = `${intent.quantity} ticket${intent.quantity === 1 ? '' : 's'} for "${bestShow.title}" at ${bestShow.cinema_name}, ${datePrefix} at ${timeString}. Seats: ${selectedSeatLabels}. Total: ₹${totalTicketPrice.toFixed(0)}. Confirm or change?`;
 
     res.json({
       type: 'confirm_checkout',
