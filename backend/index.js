@@ -1785,6 +1785,29 @@ app.post('/api/bookings/:id/cancel', authenticateToken, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Gemini Reply Generator: given DB results, compose a natural sentence.
+// Falls back to the provided fallbackMessage if Gemini fails or key is missing.
+// ─────────────────────────────────────────────────────────────────────────────
+async function generateBotReply(situation, fallbackMessage) {
+  const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+  if (!GEMINI_API_KEY || GEMINI_API_KEY === 'your_gemini_api_key_here') return fallbackMessage;
+  try {
+    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.5-flash',
+      systemInstruction: `You are ShowsNow Concierge. Write ONE concise, friendly sentence presenting the given booking results to the user. 
+Never invent data. Only use facts given to you. Keep it under 30 words. No bullet points. No markdown. Just a plain sentence.`,
+      generationConfig: { temperature: 0.4 }
+    });
+    const result = await model.generateContent(situation);
+    const text = result.response.text().trim();
+    return text || fallbackMessage;
+  } catch {
+    return fallbackMessage;
+  }
+}
+
 // Autonomous booking assistant. Gemini handles conversation understanding;
 // database-backed option maps keep booking choices exact and safe.
 app.post('/api/autonomous-agent', async (req, res) => {
@@ -1903,12 +1926,26 @@ app.post('/api/autonomous-agent', async (req, res) => {
         }
       }
 
+      // ── GEMINI INTENT EXTRACTION (authoritative) ──────────────────────────
+      // Build a snapshot of already-confirmed fields so Gemini knows what's locked.
+      const confirmedFieldsSummary = [];
+      if (intent.city) confirmedFieldsSummary.push(`city confirmed: ${intent.city}`);
+      if (intent.movie_title) confirmedFieldsSummary.push(`movie confirmed: ${intent.movie_title}`);
+      if (intent.cinema_name) confirmedFieldsSummary.push(`cinema confirmed: ${intent.cinema_name}`);
+      if (intent.time_of_day && intent.time_confirmed) confirmedFieldsSummary.push(`showtime confirmed: ${intent.time_of_day}`);
+      if (intent.quantity) confirmedFieldsSummary.push(`quantity confirmed: ${intent.quantity}`);
+      if (intent.language) confirmedFieldsSummary.push(`language filter: ${intent.language}`);
+      if (intent.genre) confirmedFieldsSummary.push(`genre filter: ${intent.genre}`);
+      const confirmedContext = confirmedFieldsSummary.length > 0
+        ? `\nAlready confirmed in this booking session:\n${confirmedFieldsSummary.map(f => `- ${f}`).join('\n')}`
+        : '';
+
       const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const systemInstruction = `You are ShowsNow Concierge, a friendly movie-ticket booking assistant.
+      const systemInstruction = `You are ShowsNow Concierge, a friendly movie-ticket booking assistant for an Indian cinema booking platform.
 Use the conversation history to understand the user's latest request. Do not invent movies, cinemas, showtimes, seats, actors, or prices.
 For every user message, first decide if it is booking-related, a correction to an existing booking flow, or normal conversation.
 For normal conversation, greetings, thanks, or short non-booking messages, set all booking fields to null, set assistant_message to a brief natural reply, and set out_of_scope to false.
-For unrelated requests you cannot help with, set assistant_message to a brief redirection back to ShowsNow movie booking.
+For unrelated requests you cannot help with, set out_of_scope to true and assistant_message to a brief redirection back to ShowsNow movie booking.
 Use query_intent to tell the backend what database action to run:
 - "movie_search": user asks what movies are available, asks for recommendations, asks by genre/language/latest/rating, or wants movie options before choosing.
 - "cinema_search": user asks which cinemas/theatres/multiplexes are available, optionally in a city.
@@ -1916,6 +1953,7 @@ Use query_intent to tell the backend what database action to run:
 - "booking_checkout": user wants tickets and has or is giving booking details like movie, city, date, time, quantity, cinema, seats, or snacks.
 - "snack_search": user asks about snacks/food/drinks/menu.
 - "help": user asks what you can do.
+IMPORTANT: Only extract fields the user mentioned in this message or recent history. Do NOT clear already-confirmed fields (shown below). If the user says "make it Telugu" when a movie is already confirmed, only set language, do not unset movie_title.
 Return ONLY valid JSON with these EXACT fields:
 - "query_intent": "movie_search" or "cinema_search" or "show_search" or "booking_checkout" or "snack_search" or "help" or null
 - "movie_title": string or null
@@ -1929,12 +1967,12 @@ Return ONLY valid JSON with these EXACT fields:
 - "cinema_name": string or null
 - "actor_name": string or null
 - "sort_preference": "earliest" or "cheapest" or "best_rating" or "latest_release" or null
-- "assistant_message": short natural-language reply or null
+- "assistant_message": short natural-language reply or null (use this for greetings/conversational replies)
 - "out_of_scope": boolean
-- "reset": boolean
+- "reset": boolean (only true if user says "start over" or "cancel")
+${confirmedContext}`;
 
-If the user changes their mind, put the corrected value in the relevant field. If they ask by actor/cast/star, set actor_name. If they only greet or ask what you can do, use assistant_message.`;
-
+      let geminiSucceeded = false;
       if (GEMINI_API_KEY && GEMINI_API_KEY !== 'your_gemini_api_key_here') {
         try {
           const safeHistory = Array.isArray(history)
@@ -1945,14 +1983,17 @@ If the user changes their mind, put the corrected value in the relevant field. I
           const model = genAI.getGenerativeModel({
             model: 'gemini-2.5-flash',
             systemInstruction,
-            generationConfig: { responseMimeType: 'application/json', temperature: 0.25 }
+            generationConfig: { responseMimeType: 'application/json', temperature: 0.2 }
           });
           const result = await model.generateContent(conversationText);
           const aiIntent = JSON.parse(result.response.text());
+          geminiSucceeded = true;
+
           aiAssistantMessage = aiIntent.assistant_message || null;
           aiMarkedOutOfScope = Boolean(aiIntent.out_of_scope);
           unsupportedActorFilter = Boolean(aiIntent.actor_name);
           searchMode = normalizeQueryIntent(aiIntent.query_intent);
+
           aiExtractedBookingIntent = Boolean(
             searchMode ||
             aiIntent.movie_title ||
@@ -1966,7 +2007,10 @@ If the user changes their mind, put the corrected value in the relevant field. I
             aiIntent.cinema_name ||
             aiIntent.sort_preference
           );
+
           if (aiIntent.reset) intent = {};
+
+          // Gemini is authoritative — merge its values over the intent
           intent = mergePresent(normalizeBotIntent(intent), {
             movie_title: aiIntent.movie_title,
             city: aiIntent.city,
@@ -1981,47 +2025,68 @@ If the user changes their mind, put the corrected value in the relevant field. I
           });
           intent = normalizeBotIntent(intent);
         } catch (e) {
-          console.warn('Gemini booking assistant failed:', e.message);
+          console.warn('Gemini intent extraction failed, falling back to regex:', e.message);
         }
       }
 
-      const local = await extractLocalBookingIntent(promptText);
-      const meaningfulLocalIntent = Boolean(
-        local.intent.movie_title ||
-        local.intent.movie_options ||
-        local.intent.city ||
-        local.intent.time_of_day ||
-        local.intent.date ||
-        local.intent.snack ||
-        local.intent.genre ||
-        local.intent.language ||
-        local.intent.cinema_name ||
-        local.intent.quantity
-      );
-      const intentForScope = normalizeBotIntent(mergeMissing(normalizeBotIntent(intent), local.intent));
-      searchMode = searchMode || inferFallbackQueryIntent(promptText, intentForScope);
-      
+      // ── REGEX FALLBACK (only if Gemini unavailable) ───────────────────────
+      if (!geminiSucceeded) {
+        const local = await extractLocalBookingIntent(promptText);
+        const meaningfulLocalIntent = Boolean(
+          local.intent.movie_title || local.intent.movie_options || local.intent.city ||
+          local.intent.time_of_day || local.intent.date || local.intent.snack ||
+          local.intent.genre || local.intent.language || local.intent.cinema_name || local.intent.quantity
+        );
+        searchMode = searchMode || inferFallbackQueryIntent(promptText, normalizeBotIntent(mergeMissing(normalizeBotIntent(intent), local.intent)));
+
+        if (local.intent.movie_options?.length > 1 && !local.intent.movie_title && !intent.movie_title) {
+          const optionValues = {};
+          for (const title of local.intent.movie_options) {
+            optionValues[title] = { movie_title: title, movie_confirmed: true, current_offset: 0 };
+          }
+          return res.json({
+            type: 'clarify',
+            message: 'I found more than one matching movie. Which one did you mean?',
+            options: local.intent.movie_options,
+            context: buildOptionContext(normalizeBotIntent(intent), 'movie_title', optionValues)
+          });
+        }
+
+        delete local.intent.movie_options;
+        if (local.intent.option_offset) {
+          intent.current_offset = (intent.current_offset || 0) + 4;
+          delete local.intent.option_offset;
+        }
+        if (/\b(latest|newest|new release|recent)\b/i.test(promptText)) {
+          intent.sort_preference = 'latest_release';
+        }
+        intent = mergeMissing(normalizeBotIntent(intent), local.intent);
+        intent = normalizeBotIntent(intent);
+        aiExtractedBookingIntent = meaningfulLocalIntent;
+      }
+
+      // ── SCOPE CHECK ───────────────────────────────────────────────────────
       const isGreeting = /^(hi|hello|hey|greetings|howdy)(?:\s+there)?[!. ]*$/i.test(promptText.trim());
       if (isGreeting) {
-         return res.json({ type: 'greeting', message: aiAssistantMessage || 'Hello! I am the ShowsNow Concierge. I can help you find movies and book tickets. What would you like to watch?' });
+        return res.json({ type: 'greeting', message: aiAssistantMessage || 'Hi! I\'m ShowsNow Concierge. Tell me what you want to watch, like "book 2 action movie tickets in Mumbai tonight".' });
       }
 
       const isConversational = Boolean(aiAssistantMessage) || /^(are you|who are|what are|can you|help|thanks|thank you)\b/i.test(promptText.trim());
-      const freshBookingIntent = hasBookingIntent(promptText) || meaningfulLocalIntent || aiExtractedBookingIntent || Boolean(searchMode) || seatPreferenceUpdated;
-      
+      const freshBookingIntent = hasBookingIntent(promptText) || aiExtractedBookingIntent || Boolean(searchMode) || seatPreferenceUpdated;
+
       const promptIsInScope = freshBookingIntent || (!aiMarkedOutOfScope && isConversational);
       if (!promptIsInScope) {
-        return res.json({
-          type: aiAssistantMessage ? 'greeting' : 'out_of_scope',
-          message: aiAssistantMessage || BOT_OUT_OF_SCOPE_MESSAGE
-        });
+        if (aiAssistantMessage) {
+          return res.json({ type: 'greeting', message: aiAssistantMessage });
+        }
+        return res.json({ type: 'out_of_scope', message: BOT_OUT_OF_SCOPE_MESSAGE });
       }
       if (freshBookingIntent) clarificationField = null;
 
       if (unsupportedActorFilter || ACTOR_FILTER_PATTERN.test(promptText)) {
         return res.json({
           type: 'clarify',
-          message: 'I can search ShowsNow by city, movie title, genre, language, cinema, date, time, tickets, and snacks. This database does not store actor or cast names yet, so I cannot reliably filter by actor.',
+          message: aiAssistantMessage || 'ShowsNow can search by city, movie title, genre, language, cinema, date, time, tickets, and snacks. Actor/cast filtering is not available in the database yet.',
           options: ['Action movies', 'Drama movies', 'Animation movies', 'English movies'],
           context: buildOptionContext(normalizeBotIntent(intent), 'genre', {
             'Action movies': { genre: 'action', current_offset: 0 },
@@ -2032,38 +2097,13 @@ If the user changes their mind, put the corrected value in the relevant field. I
         });
       }
 
-      if (local.intent.movie_options?.length > 1 && !local.intent.movie_title && !intent.movie_title) {
-        const optionValues = {};
-        for (const title of local.intent.movie_options) {
-          optionValues[title] = { movie_title: title, movie_confirmed: true, current_offset: 0 };
-        }
-        return res.json({
-          type: 'clarify',
-          message: 'I found more than one matching movie. Which one did you mean?',
-          options: local.intent.movie_options,
-          context: buildOptionContext(normalizeBotIntent(intent), 'movie_title', optionValues)
-        });
-      }
-
-      delete local.intent.movie_options;
-      
-      if (local.intent.option_offset) {
-        intent.current_offset = (intent.current_offset || 0) + 4;
-        delete local.intent.option_offset;
-      }
-      if (/\b(latest|newest|new release|recent)\b/i.test(promptText)) {
-        intent.sort_preference = 'latest_release';
-      }
-      
-      intent = mergeMissing(normalizeBotIntent(intent), local.intent);
-      intent = normalizeBotIntent(intent);
-      searchMode = searchMode || inferFallbackQueryIntent(promptText, intent);
-
       if (isConversational && !freshBookingIntent) {
-        return res.json({ type: 'greeting', message: aiAssistantMessage || 'I am the ShowsNow Concierge. I can help you search by city, genre, language, cinema, date, and time, then prepare checkout after you confirm the exact show.' });
+        return res.json({ type: 'greeting', message: aiAssistantMessage || 'I\'m ShowsNow Concierge. Ask me to find movies, check showtimes, or book tickets in any city.' });
       }
+
+      searchMode = searchMode || inferFallbackQueryIntent(promptText, intent);
     } else {
-       // if no promptText (initial load), reset offset
+       // Initial load — reset pagination offset
        intent.current_offset = 0;
     }
 
@@ -2205,9 +2245,14 @@ If the user changes their mind, put the corrected value in the relevant field. I
       }
       const cityLabel = intent.city || 'all cities';
       const filterLabel = intent.genre ? `${intent.genre} movies` : intent.language ? `${intent.language} movies` : 'movies';
+      const movieFallback = `Here are ${filterLabel} currently in ${cityLabel}: ${movieTitles.slice(0, 6).join(', ')}. Which one would you like?`;
+      const movieReply = await generateBotReply(
+        `The user asked for ${filterLabel} in ${cityLabel}. Currently showing: ${movieTitles.join(', ')}. Present these options.`,
+        movieFallback
+      );
       return res.json({
         type: 'clarify',
-        message: `Here are ${filterLabel} currently available in ${cityLabel}: ${movieTitles.join(', ')}. Which one would you like?`,
+        message: movieReply,
         options: movieTitles.slice(0, 6),
         context: buildOptionContext(intent, 'movie_title', optionValues)
       });
@@ -2248,9 +2293,14 @@ If the user changes their mind, put the corrected value in the relevant field. I
         optionValues[cinema] = { cinema_name: cinema, cinema_confirmed: true, current_offset: 0 };
       }
       const cityLabel = intent.city || 'all cities';
+      const cinemaFallback = `ShowsNow cinemas in ${cityLabel}: ${cinemaLabels.join(', ')}. Pick one to search shows.`;
+      const cinemaReply = await generateBotReply(
+        `User asked for cinemas in ${cityLabel}. Available: ${cinemaLabels.join(', ')}. Present these options.`,
+        cinemaFallback
+      );
       return res.json({
         type: 'clarify',
-        message: `These ShowsNow cinemas are available in ${cityLabel}: ${cinemaLabels.join(', ')}. Pick one if you want me to search shows there.`,
+        message: cinemaReply,
         options: cinemaNames.slice(0, 6),
         context: buildOptionContext(intent, 'cinema_name', optionValues)
       });
@@ -2429,14 +2479,23 @@ If the user changes their mind, put the corrected value in the relevant field. I
           context: { ...intent, current_offset: 0 }
         });
       }
+      const movieName = intent.movie_title || uniqueMovies[0];
+      const cinemaName = intent.cinema_name || uniqueCinemas[0];
+      const showtimeFallback = showRes.rows.length === 1
+        ? `There is only one showtime for ${movieName} at ${cinemaName}. Select it to confirm.`
+        : `${movieName} is playing at ${cinemaName}. Here are the available showtimes — which works for you?`;
+      const showtimeReply = await generateBotReply(
+        `Movie: ${movieName}, Cinema: ${cinemaName}. Available showtimes: ${opts.filter(o => o !== 'More showtimes').join(', ')}. Tell the user which times are available and ask them to pick one.`,
+        showtimeFallback
+      );
       return res.json({
         type: 'clarify',
-        message: aiAssistantMessage || (showRes.rows.length === 1 ? 'There is only one matching showtime. Please select it to confirm:' : 'I found these actual showtimes. Which exact one should I use?'),
+        message: showtimeReply,
         options: opts,
         context: buildOptionContext({
           ...intent,
-          movie_title: intent.movie_title || uniqueMovies[0],
-          cinema_name: intent.cinema_name || uniqueCinemas[0]
+          movie_title: movieName,
+          cinema_name: cinemaName
         }, 'time_of_day', optionValues)
       });
     }
@@ -2537,9 +2596,15 @@ If the user changes their mind, put the corrected value in the relevant field. I
       'Change tickets': { action: 'change_quantity' },
     };
 
+    const checkoutFallback = `Great! ${intent.quantity} ticket${intent.quantity === 1 ? '' : 's'} for ${bestShow.title} at ${bestShow.cinema_name}, ${datePrefix} at ${timeString}. Seats: ${selectedSeatLabels}. Total: ₹${totalTicketPrice.toFixed(0)}. Shall I go ahead?`;
+    const checkoutMessage = await generateBotReply(
+      `Booking ready: ${intent.quantity} ticket(s) for "${bestShow.title}" at ${bestShow.cinema_name}, ${datePrefix} at ${timeString}. Seats: ${selectedSeatLabels}. Total: ₹${totalTicketPrice.toFixed(0)}. Ask the user to confirm or change something.`,
+      checkoutFallback
+    );
+
     res.json({
       type: 'confirm_checkout',
-      message: `Here is the booking I found: ${intent.quantity} ticket${intent.quantity === 1 ? '' : 's'} for ${bestShow.title} at ${bestShow.cinema_name}, ${datePrefix} ${timeString}. Seats: ${selectedSeatLabels}. Ticket total: ₹${totalTicketPrice.toFixed(0)}. Should I continue to checkout?`,
+      message: checkoutMessage,
       options: confirmOptions,
       context: buildOptionContext({ ...intent, checkoutPayload }, 'checkout_confirmation', confirmValues)
     });
