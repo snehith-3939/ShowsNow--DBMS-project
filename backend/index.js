@@ -2680,53 +2680,41 @@ async function autoGenerateShows() {
     );
     if (deleted.rowCount > 0) console.log(`[Shows] Removed ${deleted.rowCount} stale past shows.`);
 
-    // Generate future shows for all movies across all screens
+    // Generate future shows for all movies across all screens.
     // 6 cinema-standard slot times (minutes from midnight IST):
-    //   600 = 10:00am | 750 = 12:30pm | 900 = 15:00pm
-    //   1050 = 17:30pm | 1200 = 20:00pm | 1350 = 22:30pm
-    // Each screen gets assigned 2 non-overlapping slots (deterministic, based on screen hash)
-    // so cinemas have varied showtimes without all playing at identical hours.
+    //   600=10:00  750=12:30  900=15:00  1050=17:30  1200=20:00  1350=22:30
+    // Each screen gets exactly 2 of the 6 slots (chosen by screen-id hash) so
+    // not every screen plays at the same hours. All times are round/half-hour.
     const result = await client.query(`
       INSERT INTO shows (movie_id, screen_id, show_time, base_price, available_seats)
-      SELECT
+      SELECT DISTINCT
         m.movie_id,
         s.screen_id,
         (DATE_TRUNC('day', NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'
           + (d.day_offset || ' days')::INTERVAL
-          + (slots.slot_min || ' minutes')::INTERVAL
+          + (slot.slot_min || ' minutes')::INTERVAL
         ) AS show_time,
         (200 + MOD(ABS(hashtext(m.movie_id::text)), 200))::numeric AS base_price,
         s.total_seats
       FROM movies m
       CROSS JOIN screens s
       CROSS JOIN generate_series(0, 4) AS d(day_offset)
-      -- Pick 2 slots per screen using deterministic hash: slot index 0..5
-      -- Slot assignments: screen hash mod 3 → gives (slot A, slot B) pair
-      CROSS JOIN LATERAL (
-        VALUES
-          (CASE MOD(ABS(hashtext(s.screen_id::text)), 6)
-            WHEN 0 THEN 600   -- 10:00
-            WHEN 1 THEN 750   -- 12:30
-            WHEN 2 THEN 900   -- 15:00
-            WHEN 3 THEN 1050  -- 17:30
-            WHEN 4 THEN 1200  -- 20:00
-            ELSE              1350  -- 22:30
-          END),
-          (CASE MOD(ABS(hashtext(s.screen_id::text)), 6)
-            WHEN 0 THEN 1200  -- 20:00
-            WHEN 1 THEN 1350  -- 22:30
-            WHEN 2 THEN 600   -- 10:00
-            WHEN 3 THEN 750   -- 12:30
-            WHEN 4 THEN 900   -- 15:00
-            ELSE              1050  -- 17:30
-          END)
-      ) AS slots(slot_min)
+      CROSS JOIN UNNEST(ARRAY[
+        CASE MOD(ABS(hashtext(s.screen_id::text)), 6)
+          WHEN 0 THEN 600  WHEN 1 THEN 750  WHEN 2 THEN 900
+          WHEN 3 THEN 1050 WHEN 4 THEN 1200 ELSE 1350
+        END,
+        CASE MOD(ABS(hashtext(s.screen_id::text)), 6)
+          WHEN 0 THEN 1200 WHEN 1 THEN 1350 WHEN 2 THEN 600
+          WHEN 3 THEN 750  WHEN 4 THEN 900  ELSE 1050
+        END
+      ]) AS slot(slot_min)
       WHERE
         (m.release_date IS NULL OR m.release_date <= (CURRENT_DATE + (d.day_offset || ' days')::INTERVAL)::date)
         AND (
           DATE_TRUNC('day', NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'
           + (d.day_offset || ' days')::INTERVAL
-          + (slots.slot_min || ' minutes')::INTERVAL
+          + (slot.slot_min || ' minutes')::INTERVAL
         ) > NOW()
       ON CONFLICT DO NOTHING
     `);
