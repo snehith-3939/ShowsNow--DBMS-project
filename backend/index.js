@@ -2369,6 +2369,74 @@ ${confirmedContext}`;
       WHERE s.show_time >= (NOW() - INTERVAL '30 minutes')
     `;
 
+    // ── VALIDATE MOVIE TITLE AGAINST DB ─────────────────────────────────────
+    // Prevents hallucinated movie names from silently failing with a confusing
+    // "not found" message after the user has already been shown fake showtimes.
+    if (intent.movie_title && !intent.movie_confirmed) {
+      const movieCheck = await query(
+        'SELECT title FROM movies WHERE title ILIKE $1 LIMIT 1',
+        [`%${intent.movie_title}%`]
+      );
+      if (movieCheck.rows.length === 0) {
+        // Movie not in our catalog — show what IS playing instead
+        const cityFilter = intent.city ? ' AND c.city ILIKE $1' : '';
+        const cityParam = intent.city ? [`%${intent.city}%`] : [];
+        const playingRes = await query(
+          `SELECT DISTINCT m.title FROM movies m
+           JOIN shows s ON m.movie_id = s.movie_id
+           JOIN screens sc ON s.screen_id = sc.screen_id
+           JOIN cinemas c ON sc.cinema_id = c.cinema_id
+           WHERE s.show_time >= NOW() ${cityFilter}
+           ORDER BY m.title LIMIT 6`,
+          cityParam
+        );
+        const titles = playingRes.rows.map(r => r.title);
+        const cityLabel = intent.city || 'our cities';
+        if (titles.length === 0) {
+          return res.json({ type: 'error', message: `I don't have "${intent.movie_title}" in our catalog right now. No movies are currently scheduled in ${cityLabel}.` });
+        }
+        const optionValues = {};
+        for (const t of titles) optionValues[t] = { movie_title: t, movie_confirmed: true, current_offset: 0 };
+        return res.json({
+          type: 'clarify',
+          message: `"${intent.movie_title}" isn't in our catalog right now${intent.city ? ` in ${intent.city}` : ''}. Currently playing: ${titles.slice(0, 4).join(', ')}. Pick one?`,
+          options: titles.slice(0, 6),
+          context: buildOptionContext({ ...intent, movie_title: undefined }, 'movie_title', optionValues)
+        });
+      }
+      // Canonicalize to DB title
+      intent.movie_title = movieCheck.rows[0].title;
+      intent.movie_confirmed = true;
+    }
+
+    // ── VALIDATE CINEMA NAME AGAINST DB ─────────────────────────────────────
+    if (intent.cinema_name && !intent.cinema_confirmed) {
+      const cinemaCheck = await query(
+        'SELECT name, city FROM cinemas WHERE name ILIKE $1 LIMIT 1',
+        [`%${intent.cinema_name}%`]
+      );
+      if (cinemaCheck.rows.length === 0) {
+        // Cinema doesn't exist — suggest real ones
+        const cityFilter = intent.city ? ' WHERE city ILIKE $1' : '';
+        const cityParam = intent.city ? [`%${intent.city}%`] : [];
+        const realCinemas = await query(
+          `SELECT name FROM cinemas${cityFilter} ORDER BY name LIMIT 6`,
+          cityParam
+        );
+        const names = realCinemas.rows.map(r => r.name);
+        const optionValues = {};
+        for (const n of names) optionValues[n] = { cinema_name: n, cinema_confirmed: true, current_offset: 0 };
+        return res.json({
+          type: 'clarify',
+          message: `I couldn't find "${intent.cinema_name}"${intent.city ? ` in ${intent.city}` : ''}. Here are our cinemas — which do you prefer?`,
+          options: names,
+          context: buildOptionContext({ ...intent, cinema_name: undefined }, 'cinema_name', optionValues)
+        });
+      }
+      intent.cinema_name = cinemaCheck.rows[0].name;
+      intent.cinema_confirmed = true;
+    }
+
     let paramIdx = 1;
     if (intent.selected_show_id) {
       sql += ` AND s.show_id = $${paramIdx}`;
@@ -2426,6 +2494,61 @@ ${confirmedContext}`;
     sql += ` ORDER BY ${orderClauses.join(', ')} LIMIT 50`;
 
     const showRes = await query(sql, params);
+
+    // ── STALE SHOW_ID RECOVERY ───────────────────────────────────────────────
+    // If user picked a showtime but the show was since deleted/regenerated,
+    // clear selected_show_id and re-run without it so they get fresh options.
+    if (showRes.rows.length === 0 && intent.selected_show_id) {
+      delete intent.selected_show_id;
+      delete intent.time_confirmed;
+      delete intent.time_of_day;
+      intent.current_offset = 0;
+      // Re-run query without the stale show_id
+      const freshParams = [];
+      let freshSql = `
+        SELECT s.show_id, s.show_time, s.base_price, s.surge_multiplier, s.available_seats,
+               m.title, m.poster_url, m.genre, m.release_date, m.vote_average,
+               c.name as cinema_name, c.city, sc.name as screen_name, sc.screen_id
+        FROM shows s
+        JOIN movies m ON s.movie_id = m.movie_id
+        JOIN screens sc ON s.screen_id = sc.screen_id
+        JOIN cinemas c ON sc.cinema_id = c.cinema_id
+        WHERE s.show_time >= (NOW() - INTERVAL '30 minutes')
+      `;
+      let freshIdx = 1;
+      if (intent.city) { freshSql += ` AND c.city ILIKE $${freshIdx}`; freshParams.push(`%${intent.city}%`); freshIdx++; }
+      if (intent.movie_title) { freshSql += ` AND m.title ILIKE $${freshIdx}`; freshParams.push(`%${intent.movie_title}%`); freshIdx++; }
+      if (intent.cinema_name) { freshSql += ` AND c.name ILIKE $${freshIdx}`; freshParams.push(`%${intent.cinema_name}%`); freshIdx++; }
+      freshSql += ` ORDER BY s.show_time ASC LIMIT 20`;
+      const freshRes = await query(freshSql, freshParams);
+      if (freshRes.rows.length > 0) {
+        // Show fresh options
+        const freshOpts = [];
+        const freshOptValues = {};
+        const seenFreshLabels = new Map();
+        for (const show of freshRes.rows.slice(0, 4)) {
+          const baseLabel = formatShowOptionTime(show);
+          const count = seenFreshLabels.get(baseLabel) || 0;
+          seenFreshLabels.set(baseLabel, count + 1);
+          const label = count === 0 ? baseLabel : `${baseLabel} (${show.screen_name})`;
+          freshOpts.push(label);
+          freshOptValues[label] = { selected_show_id: show.show_id, time_of_day: label, date: showDateLabel(show.show_time), time_confirmed: true, current_offset: 0 };
+        }
+        if (freshRes.rows.length > 4) {
+          freshOptValues['More showtimes'] = { action: 'more', clarification_field: 'time_of_day', current_offset: 4 };
+          freshOpts.push('More showtimes');
+        }
+        const movieName = intent.movie_title || freshRes.rows[0].title;
+        const cinemaName = intent.cinema_name || freshRes.rows[0].cinema_name;
+        return res.json({
+          type: 'clarify',
+          message: `That showtime is no longer available. Here are the current showtimes for ${movieName} at ${cinemaName} — which works for you?`,
+          options: freshOpts,
+          context: buildOptionContext({ ...intent, movie_title: movieName, cinema_name: cinemaName }, 'time_of_day', freshOptValues)
+        });
+      }
+      return res.json({ type: 'error', message: `That showtime is no longer available and I couldn't find other upcoming shows${intent.movie_title ? ` for ${intent.movie_title}` : ''}${intent.city ? ` in ${intent.city}` : ''}. Try a different date or movie.` });
+    }
 
     if (showRes.rows.length === 0) {
       if (clarificationField) {
