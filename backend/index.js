@@ -2683,8 +2683,7 @@ async function autoGenerateShows() {
     // Generate future shows for all movies across all screens.
     // 6 cinema-standard slot times (minutes from midnight IST):
     //   600=10:00  750=12:30  900=15:00  1050=17:30  1200=20:00  1350=22:30
-    // Each screen gets exactly 2 of the 6 slots (chosen by screen-id hash) so
-    // not every screen plays at the same hours. All times are round/half-hour.
+    // Each screen gets exactly 2 of the 6 slots (chosen by screen-id hash).
     const result = await client.query(`
       INSERT INTO shows (movie_id, screen_id, show_time, base_price, available_seats)
       SELECT DISTINCT
@@ -2716,13 +2715,13 @@ async function autoGenerateShows() {
           + (d.day_offset || ' days')::INTERVAL
           + (slot.slot_min || ' minutes')::INTERVAL
         ) > NOW()
-      ON CONFLICT DO NOTHING
+      ON CONFLICT (screen_id, show_time) DO NOTHING
     `);
     await client.query('COMMIT');
     console.log(`[Shows] Done. ${result.rowCount} new show slots inserted.`);
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error('[Shows] Error during auto-generation:', err.message);
+    console.error('[Shows] Error during auto-generation:', err.message, err.stack?.split('\n')[1]);
   } finally {
     client.release();
   }
